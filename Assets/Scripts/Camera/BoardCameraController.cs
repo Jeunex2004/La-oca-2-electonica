@@ -8,13 +8,17 @@ namespace Oca2.Cameras
     /// <summary>
     /// Controlador de cámara 3D isométrica para juegos de mesa.
     /// Permite rotar a los 4 puntos cardinales con las teclas A y D (90° por pulsación),
-    /// hacer paneo con W/S o arrastre del ratón, zoom con la rueda y seguimiento de fichas.
+    /// cambiar de tablero con las flechas Izquierda y Derecha,
+    /// hacer paneo con el arrastre del ratón, zoom con la rueda y seguimiento de fichas.
     /// </summary>
     public class BoardCameraController : MonoBehaviour
     {
-        [Header("Punto de Enfoque y Tablero")]
+        [Header("Punto de Enfoque y Tableros")]
         [Tooltip("Transform del centro del tablero actual (o centro del mundo)")]
         [SerializeField] private Transform boardCenter;
+
+        [Tooltip("Asigna aquí los Transforms del centro de los 4 tableros (Principal, Infierno 1, Infierno 2, Payaso)")]
+        [SerializeField] private Transform[] allBoardCenters;
 
         [Tooltip("Objetivo actual a seguir (ej: la Oca activa en su turno)")]
         [SerializeField] private Transform followTarget;
@@ -56,6 +60,7 @@ namespace Oca2.Cameras
         private float distanceVelocity;
 
         private bool isFollowingTarget = false;
+        private int currentBoardIndex = 0;
 
         public int CurrentCardinalIndex => currentCardinalIndex;
         public float CurrentYaw => currentYaw;
@@ -105,9 +110,15 @@ namespace Oca2.Cameras
                     RotateCardinal(-1); // Girar 90° antihorario
                 }
 
-                // Paneo manual (W y S para adelante/atrás respecto a la vista)
-                if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed) panZ += 1f;
-                if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed) panZ -= 1f;
+                // Cambiar de tablero con Flecha Izquierda y Derecha
+                if (keyboard.rightArrowKey.wasPressedThisFrame)
+                {
+                    CycleBoard(1);
+                }
+                else if (keyboard.leftArrowKey.wasPressedThisFrame)
+                {
+                    CycleBoard(-1);
+                }
 
                 // Restablecer vista general con barra espaciadora
                 if (keyboard.spaceKey.wasPressedThisFrame)
@@ -135,8 +146,10 @@ namespace Oca2.Cameras
             if (Input.GetKeyDown(KeyCode.D)) RotateCardinal(1);
             if (Input.GetKeyDown(KeyCode.A)) RotateCardinal(-1);
 
-            if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow)) panZ += 1f;
-            if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) panZ -= 1f;
+            // Cambiar de tablero con Flecha Izquierda y Derecha (Fallback)
+            if (Input.GetKeyDown(KeyCode.RightArrow)) CycleBoard(1);
+            if (Input.GetKeyDown(KeyCode.LeftArrow)) CycleBoard(-1);
+
             if (Input.GetKeyDown(KeyCode.Space)) ResetToOverview();
 
             scroll = Input.GetAxis("Mouse ScrollWheel") * 100f;
@@ -154,7 +167,7 @@ namespace Oca2.Cameras
                 targetDistance = Mathf.Clamp(targetDistance - zoomDelta, minDistance, maxDistance);
             }
 
-            // Aplicar Paneo manual
+            // Aplicar Paneo manual (por ratón)
             if (Mathf.Abs(panX) > 0.01f || Mathf.Abs(panZ) > 0.01f)
             {
                 // Si el jugador mueve la cámara manualmente, desactivar temporalmente el seguimiento
@@ -181,8 +194,6 @@ namespace Oca2.Cameras
 
         /// <summary>
         /// Rota la cámara exactamente 90 grados al siguiente punto cardinal.
-        /// direction = +1 para derecha/horario (tecla D)
-        /// direction = -1 para izquierda/antihorario (tecla A)
         /// </summary>
         public void RotateCardinal(int direction)
         {
@@ -190,6 +201,21 @@ namespace Oca2.Cameras
             if (currentCardinalIndex < 0) currentCardinalIndex += 4;
 
             targetYaw = currentCardinalIndex * 90f;
+        }
+
+        /// <summary>
+        /// Cambia al tablero siguiente o anterior usando el arreglo de tableros.
+        /// </summary>
+        private void CycleBoard(int direction)
+        {
+            if (allBoardCenters == null || allBoardCenters.Length == 0) return;
+
+            currentBoardIndex = (currentBoardIndex + direction) % allBoardCenters.Length;
+            
+            // Ajuste para evitar índices negativos si se presiona la flecha izquierda
+            if (currentBoardIndex < 0) currentBoardIndex += allBoardCenters.Length;
+
+            SwitchBoard(allBoardCenters[currentBoardIndex]);
         }
 
         /// <summary>
@@ -217,7 +243,7 @@ namespace Oca2.Cameras
         }
 
         /// <summary>
-        /// Transiciona suavemente la cámara a otro tablero (ej: Infierno 1, Infierno 2 o Payaso).
+        /// Transiciona suavemente la cámara a otro tablero.
         /// </summary>
         public void SwitchBoard(Transform newBoardCenter)
         {
