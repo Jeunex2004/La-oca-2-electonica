@@ -95,7 +95,34 @@ Implementado en [`BoardLayoutBuilder.cs`](Assets/Scripts/Board/BoardLayoutBuilde
 
 ---
 
-### 4. Mundo 3D y Sistema de Cámara (Etapa 1)
+### 4. Habilidades Pasivas de las 6 Ocas, Árbol de Experiencia, Tiendas, Objetos, Cartas Salvajes y Hechizos (Etapa 5)
+
+Implementado en [`SkillTreeAndAbilities.cs`](Assets/Scripts/Progression/SkillTreeAndAbilities.cs), [`ShopAndItemsSystem.cs`](Assets/Scripts/Items/ShopAndItemsSystem.cs) y [`SpellsAndWildCardsSystem.cs`](Assets/Scripts/CardsAndMagic/SpellsAndWildCardsSystem.cs), e integrado en el HUD de partida y en el modal de Combate:
+
+- **Habilidades Pasivas de las 6 Ocas (`SkillTreeAndAbilities.cs`):**
+  1. **La Oca Default (*Equilibrio Clásico*):** Comienza la partida con **+1 de Experiencia** (Nivel 2 inicial y 1 punto de habilidad).
+  2. **La Ocarina (*Melodía Lunar*):** Comienza la partida con **+1 de Maná** y **1 Hechizo aleatorio** equipado.
+  3. **La Oca de Boca (*La Mitad Más Uno*):** Obtiene **+1 fijo permanente** a su fuerza en todas las tiradas de combate.
+  4. **La Loca (*Caos Festivo*):** Gana **+1 Moneda** adicional cada vez que cae en una casilla de Carta Salvaje.
+  5. **La Barroca (*Opulencia Aristocrática*):** Comienza la partida con **+2 Monedas extra** (5 monedas iniciales).
+  6. **El Xoca (*Tryhard*):** Obtiene **+4 de Experiencia** al ganar un combate (en lugar de +3 EXP).
+- **Árbol de Habilidades por Experiencia (`Skill Tree.png`, Niveles 1 a 22):**
+  - Subir del nivel $N$ requiere $N$ puntos de EXP y otorga **1 punto de habilidad** para invertir en las 4 ramas (5 líneas desbloqueables de abajo hacia arriba):
+    - **Rama Movimiento (5 nodos):** `+1 Mov`, `+2 Mov`, `+1d6 Mov`, `+1d6 Mov`, `+3 Mov`.
+    - **Rama Combate Dados d6 (3 nodos):** `+1 Att (Base)`, `+1d6 Att`, `+1d6 Att`.
+    - **Rama Combate Pesado (3 nodos):** `+2 Att`, `+1d8 Att`, `+1d10 Att`.
+    - **Rama Riqueza (5 nodos):** Nodos 2 y 5 otorgan `+1 Moneda` adicional por cada casilla de Dinero (hasta 3 monedas por casilla).
+    - **Rama Magia (5 nodos):** Nodos 2 y 5 otorgan `+1 Maná` adicional cada Luna Llena (hasta 3 de Maná por Luna Llena).
+- **Tienda Principal (`Tienda.png`), Tienda del Infierno (`Tienda infierno.png`) y los 12 Objetos (`ShopAndItemsSystem.cs`):**
+  - Se abre automáticamente al pasar por encima de una casilla de Tienda (`11, 34, 46` en el Tablero Principal; `34, 37` en Infierno 1). Caer **exactamente** en la casilla de Tienda desbloquea además la **Caja Verde** (*Lupa [5]*, *Carta Reversa del UNO [7]*) o la **Caja Roja** (*Espada [4]*, *Pistola [5]*).
+  - Catálogo completo de 12 objetos equipables/consumibles en turno y en combate: `RedBull (+1d6 Mov)`, `Crucifijo (quita efecto negativo o escapa del Infierno)`, `Guante de Duelo (reta al primer jugador cruzado)`, `Botas (+3 Mov)`, `Armadura (+5 Combate)`, `Lupa (elige pasos exactos)`, `Carta Reversa del UNO (revierte derrota/muerte/efecto negativo)`, `Pentagrama (-1d6 al rival en combate)`, `Botella de EXP (+1d4 EXP)`, `Botella de Maná (+1d4 Maná)`, `Espada (+8 Combate)` y `Pistola (mata a un jugador a elección)`.
+- **Sistema de Hechizos (`Hechizos.jpg`) y Mazo de Cartas Salvajes (`Wild Cards.jpg`):**
+  - **13 Hechizos con coste de Maná (`SpellsAndWildCardsSystem.cs`):** `Teletransporte [5]`, `Payasización [4]`, `Paso Ligero [3]`, `Vampirismo [2]`, `Flecha Mágica [1, +1d4 combate]`, `Bola de Fuego [1, +1d10 combate]`, `Victoria [35, gana la partida]`, `Eldritch Blast [0, +1d6 combate]`, `Congelar [3]`, `Velocidad [2]`, `Ralentizar [1]`, `Muerte [4]` y `Limpieza [2]`.
+  - **Mazo completo de Cartas Salvajes (`WildCardDeck`):** 28 cartas con sus efectos de avance/retroceso (`1d6, 1d8, 1d20`), objetos gratuitos, envío al Tablero del Payaso, muerte instantánea, reparto equitativo de riqueza/maná, turno extra (*Obo*) y maldiciones de mesa.
+
+---
+
+### 5. Mundo 3D y Sistema de Cámara (Etapa 1)
 
 - **Cámara Isométrica 3D (`BoardCameraController.cs`):**
   - Rotación cardinal de 90° con las teclas `A` y `D`.
@@ -116,22 +143,28 @@ Assets/Scripts/
 │   └── TileType.cs              # Enumeraciones de tipos de casilla (TileType) y tableros (BoardType)
 ├── Camera/
 │   └── BoardCameraController.cs # Cámara isométrica 3D con rotación cardinal, zoom, paneo y órbita en menú
+├── CardsAndMagic/
+│   └── SpellsAndWildCardsSystem.cs # Catálogo de los 13 Hechizos ("Hechizos.jpg") y Mazo de 28 Cartas Salvajes ("Wild Cards.jpg")
 ├── Combat/
 │   ├── BossBoardToken.cs        # Figura 3D de cada Boss (La Foca, La Roca, La Trollface) sobre el tablero
 │   ├── CombatData.cs            # Estructuras DiceFormula, BossDefinition y CombatEncounter
-│   └── CombatManager.cs         # Lógica de intercepción de Bosses, combates PvP y tiradas de fuerza
+│   └── CombatManager.cs         # Lógica de intercepción de Bosses, combates PvP, objetos y hechizos de combate
 ├── Core/
-│   └── GameSessionManager.cs    # Singleton de sesión: catálogo de 6 Ocas, opciones, turnos y spawn de jugadores
+│   └── GameSessionManager.cs    # Singleton de sesión: catálogo de 6 Ocas, opciones, turnos y resolución de casillas
 ├── Data/
-│   └── OcaGameData.cs           # Modelos de datos: OcaType, OcaCharacterDefinition, PlayerSetupData, GameOptionsData
+│   └── OcaGameData.cs           # Modelos de datos: OcaType, SkillBranchType, ItemType, SpellType, PlayerSetupData
 ├── Editor/
 │   ├── BoardSetupUtility.cs     # Herramienta Editor: construcción automática de tableros y cámara
 │   └── MenuSetupUtility.cs      # Herramienta Editor: configuración de sprites de Ocas y escena de menú
+├── Items/
+│   └── ShopAndItemsSystem.cs    # Tienda Principal ("Tienda.png"), Tienda del Infierno ("Tienda infierno.png") y 12 Objetos
 ├── OCAS/
 │   ├── OcaBillboard.cs          # Mantiene los sprites de las Ocas mirando hacia la cámara principal
 │   └── PlayerOcaToken.cs        # Ficha 3D de jugador, base coloreada, sprite de Oca y animación de salto
+├── Progression/
+│   └── SkillTreeAndAbilities.cs # Pasivas de las 6 Ocas y Árbol de Habilidades de 22 niveles ("Skill Tree.png")
 └── UI/
-    └── MainMenuUIController.cs  # Interfaz UGUI: Menú Principal, Selección de Jugadores (1-8), Opciones, Créditos y HUD
+    └── MainMenuUIController.cs  # Interfaz UGUI: Menú, Selección (1-8), Opciones, HUD, Árbol EXP, Tienda, Mochila y Combate
 ```
 
 ---

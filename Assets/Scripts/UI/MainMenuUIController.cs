@@ -6,10 +6,13 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 #endif
+using Oca2.CardsAndMagic;
 using Oca2.Combat;
 using Oca2.Core;
 using Oca2.Data;
+using Oca2.Items;
 using Oca2.Players;
+using Oca2.Progression;
 
 namespace Oca2.UI
 {
@@ -62,6 +65,37 @@ namespace Oca2.UI
         private Text hudStatusText;
         private Text hudTurnHeaderText;
         private Button rollDiceButton;
+        private Text skillTreeBtnLabel;
+        private Text bagSpellBtnLabel;
+
+        // Ventana Modal del Árbol de Habilidades ("Skill Tree.png")
+        private GameObject skillTreeModalPanel;
+        private Text skillTreeHeaderText;
+        private Text skillTreePassiveText;
+        private Text skillBranchMovText;
+        private Text skillBranchCombLeftText;
+        private Text skillBranchCombRightText;
+        private Text skillBranchWealthText;
+        private Text skillBranchMagicText;
+        private Text skillTreeFeedbackText;
+
+        // Ventana Modal de Tienda Principal y Tienda del Infierno ("Tienda.png", "Tienda infierno.png")
+        private GameObject shopModalPanel;
+        private Text shopHeaderTitleText;
+        private Text shopSubNoticeText;
+        private Text shopPlayerCoinsText;
+        private Transform shopGridContainer;
+        private Text shopFeedbackText;
+
+        // Ventana Modal de Inventario (Mochila) y Hechizos ("Hechizos.jpg")
+        private GameObject bagAndMagicModalPanel;
+        private Text bagHeaderText;
+        private Text bagSpellInfoText;
+        private Text bagTargetPlayerText;
+        private Text bagStepControlText;
+        private Transform bagItemsContainer;
+        private Text bagFeedbackText;
+        private int selectedTargetPlayerIdx = 0;
 
         // Elementos de la Ventana de Combate (PvE Bosses y PvP)
         private GameObject combatModalPanel;
@@ -143,6 +177,7 @@ namespace Oca2.UI
                 GameSessionManager.Instance.OnMatchStarted += HandleMatchStarted;
                 GameSessionManager.Instance.OnMatchEndedToMenu += HandleMatchEndedToMenu;
                 GameSessionManager.Instance.OnTurnStateUpdated += HandleTurnStateUpdated;
+                GameSessionManager.Instance.OnShopTriggered += HandleShopTriggered;
             }
 
             if (CombatManager.Instance != null)
@@ -164,6 +199,7 @@ namespace Oca2.UI
                 GameSessionManager.Instance.OnMatchStarted -= HandleMatchStarted;
                 GameSessionManager.Instance.OnMatchEndedToMenu -= HandleMatchEndedToMenu;
                 GameSessionManager.Instance.OnTurnStateUpdated -= HandleTurnStateUpdated;
+                GameSessionManager.Instance.OnShopTriggered -= HandleShopTriggered;
             }
 
             if (CombatManager.Instance != null)
@@ -694,18 +730,18 @@ namespace Oca2.UI
 
             // Barra inferior de estado y botones de acción de turno
             GameObject bottomBar = CreateBox(inGameHudPanel.transform, "Bottom_ActionBar", new Color(0.08f, 0.11f, 0.08f, 0.90f),
-                new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.12f));
+                new Vector2(0.01f, 0.015f), new Vector2(0.99f, 0.125f));
             AddOutline(bottomBar, DarkBorderColor, 2f);
 
-            hudTurnHeaderText = CreateText(bottomBar.transform, "Txt_TurnHeader", "Turno: Jugador 1", 22, FontStyle.Bold,
-                new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleLeft, new Vector2(0.02f, 0.52f), new Vector2(0.55f, 0.96f));
+            hudTurnHeaderText = CreateText(bottomBar.transform, "Txt_TurnHeader", "Turno: Jugador 1", 20, FontStyle.Bold,
+                new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleLeft, new Vector2(0.015f, 0.52f), new Vector2(0.45f, 0.96f));
 
-            hudStatusText = CreateText(bottomBar.transform, "Txt_Status", "Listo para tirar el dado (1d6).", 19, FontStyle.Normal,
-                Color.white, TextAnchor.MiddleLeft, new Vector2(0.02f, 0.05f), new Vector2(0.58f, 0.52f));
+            hudStatusText = CreateText(bottomBar.transform, "Txt_Status", "Listo para tirar el dado (1d6).", 17, FontStyle.Normal,
+                Color.white, TextAnchor.MiddleLeft, new Vector2(0.015f, 0.05f), new Vector2(0.45f, 0.52f));
 
-            rollDiceButton = CreateStyledButton(bottomBar.transform, "Btn_RollDice", "Tirar Dado (1d6)",
-                new Vector2(0.60f, 0.12f), new Vector2(0.76f, 0.88f),
-                AccentGreenColor, Color.white, 22, () =>
+            rollDiceButton = CreateStyledButton(bottomBar.transform, "Btn_RollDice", "Tirar Dado",
+                new Vector2(0.46f, 0.12f), new Vector2(0.58f, 0.88f),
+                AccentGreenColor, Color.white, 20, () =>
                 {
                     if (GameSessionManager.Instance != null)
                     {
@@ -713,11 +749,21 @@ namespace Oca2.UI
                     }
                 });
 
-            CreateMockupMenuButton(bottomBar.transform, "Btn_InGameOptions", "Opciones",
-                new Vector2(0.77f, 0.12f), new Vector2(0.87f, 0.88f), ShowOptions);
+            Button skillBtn = CreateStyledButton(bottomBar.transform, "Btn_SkillTree", "Árbol EXP",
+                new Vector2(0.59f, 0.12f), new Vector2(0.70f, 0.88f),
+                new Color(0.20f, 0.52f, 0.85f, 1f), Color.white, 18, OpenSkillTreeModal);
+            skillTreeBtnLabel = skillBtn.GetComponentInChildren<Text>();
 
-            CreateMockupMenuButton(bottomBar.transform, "Btn_ReturnMenu", "Menú Principal",
-                new Vector2(0.88f, 0.12f), new Vector2(0.99f, 0.88f), () =>
+            Button bagBtn = CreateStyledButton(bottomBar.transform, "Btn_BagAndSpell", "Mochila / Magia",
+                new Vector2(0.71f, 0.12f), new Vector2(0.83f, 0.88f),
+                new Color(0.58f, 0.28f, 0.82f, 1f), Color.white, 18, OpenBagAndMagicModal);
+            bagSpellBtnLabel = bagBtn.GetComponentInChildren<Text>();
+
+            CreateMockupMenuButton(bottomBar.transform, "Btn_InGameOptions", "Opciones",
+                new Vector2(0.84f, 0.12f), new Vector2(0.91f, 0.88f), ShowOptions);
+
+            CreateMockupMenuButton(bottomBar.transform, "Btn_ReturnMenu", "Menú",
+                new Vector2(0.92f, 0.12f), new Vector2(0.99f, 0.88f), () =>
                 {
                     if (GameSessionManager.Instance != null)
                     {
@@ -729,7 +775,187 @@ namespace Oca2.UI
                     }
                 });
 
+            BuildSkillTreeModalPanel(inGameHudPanel.transform);
+            BuildShopModalPanel(inGameHudPanel.transform);
+            BuildBagAndMagicModalPanel(inGameHudPanel.transform);
             BuildCombatModalPanel(inGameHudPanel.transform);
+        }
+
+        // ---------------------------------------------------------------------
+        // 5A. MODAL DEL ÁRBOL DE HABILIDADES ("Skill Tree.png", Niveles 1 a 22)
+        // ---------------------------------------------------------------------
+        private void BuildSkillTreeModalPanel(Transform parent)
+        {
+            skillTreeModalPanel = CreatePanel(parent, "SkillTree_ModalOverlay", new Color(0.02f, 0.04f, 0.02f, 0.85f));
+
+            GameObject window = CreateBox(skillTreeModalPanel.transform, "SkillTree_Window", CardBgColor,
+                new Vector2(0.14f, 0.12f), new Vector2(0.86f, 0.88f));
+            AddOutline(window, new Color(0.25f, 0.68f, 0.95f), 4f);
+
+            skillTreeHeaderText = CreateText(window.transform, "Header", "ÁRBOL DE HABILIDADES POR EXPERIENCIA (NIVEL 1/22)", 28, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleCenter, new Vector2(0.04f, 0.88f), new Vector2(0.96f, 0.98f));
+
+            skillTreePassiveText = CreateText(window.transform, "PassiveInfo", "Pasiva de Oca: —", 18, FontStyle.Italic,
+                new Color(0.75f, 0.95f, 0.75f), TextAnchor.MiddleCenter, new Vector2(0.04f, 0.80f), new Vector2(0.96f, 0.88f));
+
+            CreateSkillBranchRow(window.transform, "Rama 1 — Movimiento (+1, +2, +1d6, +1d6, +3)", 0.66f,
+                out skillBranchMovText, () => UpgradeSkillBranchFromUI(SkillBranchType.Movement));
+
+            CreateSkillBranchRow(window.transform, "Rama 2A — Combate Dados d6 (+1 Att, +1d6 Att, +1d6 Att)", 0.54f,
+                out skillBranchCombLeftText, () => UpgradeSkillBranchFromUI(SkillBranchType.CombatLeft));
+
+            CreateSkillBranchRow(window.transform, "Rama 2B — Combate Pesado (+2 Att, +1d8 Att, +1d10 Att)", 0.42f,
+                out skillBranchCombRightText, () => UpgradeSkillBranchFromUI(SkillBranchType.CombatRight));
+
+            CreateSkillBranchRow(window.transform, "Rama 3 — Riqueza (Nodos 2 y 5: +1 Moneda por Casilla Dinero)", 0.30f,
+                out skillBranchWealthText, () => UpgradeSkillBranchFromUI(SkillBranchType.Wealth));
+
+            CreateSkillBranchRow(window.transform, "Rama 4 — Magia (Nodos 2 y 5: +1 Maná por cada Luna Llena)", 0.18f,
+                out skillBranchMagicText, () => UpgradeSkillBranchFromUI(SkillBranchType.Magic));
+
+            skillTreeFeedbackText = CreateText(window.transform, "Feedback",
+                "Sube de nivel en Casillas de EXP o ganando Combates (+3/+4 EXP) para obtener Puntos de Habilidad.",
+                18, FontStyle.Bold, new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleLeft,
+                new Vector2(0.05f, 0.04f), new Vector2(0.72f, 0.15f));
+
+            CreateMockupMenuButton(window.transform, "Btn_CloseSkillTree", "Cerrar Árbol",
+                new Vector2(0.74f, 0.04f), new Vector2(0.95f, 0.15f), () => skillTreeModalPanel.SetActive(false));
+
+            skillTreeModalPanel.SetActive(false);
+        }
+
+        private void CreateSkillBranchRow(Transform parent, string title, float yMin, out Text statusOut, UnityEngine.Events.UnityAction onUpgrade)
+        {
+            GameObject row = CreateBox(parent, $"BranchRow_{yMin}", new Color(0.11f, 0.15f, 0.11f, 0.95f),
+                new Vector2(0.05f, yMin), new Vector2(0.95f, yMin + 0.105f));
+            AddOutline(row, DarkBorderColor, 2f);
+
+            CreateText(row.transform, "Title", title, 19, FontStyle.Bold,
+                Color.white, TextAnchor.MiddleLeft, new Vector2(0.03f, 0.05f), new Vector2(0.56f, 0.95f));
+
+            statusOut = CreateText(row.transform, "Status", "0 / 5", 19, FontStyle.Bold,
+                new Color(1f, 0.90f, 0.35f), TextAnchor.MiddleCenter, new Vector2(0.57f, 0.05f), new Vector2(0.76f, 0.95f));
+
+            CreateStyledButton(row.transform, "Btn_Upgrade", "+ Mejorar (1 Pto)",
+                new Vector2(0.78f, 0.14f), new Vector2(0.98f, 0.86f),
+                AccentGreenColor, Color.white, 17, onUpgrade);
+        }
+
+        // ---------------------------------------------------------------------
+        // 5B. MODAL DE TIENDA PRINCIPAL Y TIENDA DEL INFIERNO ("Tienda.png", "Tienda infierno.png")
+        // ---------------------------------------------------------------------
+        private void BuildShopModalPanel(Transform parent)
+        {
+            shopModalPanel = CreatePanel(parent, "Shop_ModalOverlay", new Color(0.03f, 0.03f, 0.02f, 0.85f));
+
+            GameObject window = CreateBox(shopModalPanel.transform, "Shop_Window", CardBgColor,
+                new Vector2(0.10f, 0.12f), new Vector2(0.90f, 0.88f));
+            AddOutline(window, new Color(0.95f, 0.78f, 0.22f), 4f);
+
+            shopHeaderTitleText = CreateText(window.transform, "Header", "TIENDA PRINCIPAL", 34, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleLeft, new Vector2(0.04f, 0.88f), new Vector2(0.68f, 0.98f));
+
+            shopPlayerCoinsText = CreateText(window.transform, "Coins", "Tus Monedas: 3", 24, FontStyle.Bold,
+                new Color(1f, 0.88f, 0.25f), TextAnchor.MiddleRight, new Vector2(0.68f, 0.88f), new Vector2(0.96f, 0.98f));
+
+            shopSubNoticeText = CreateText(window.transform, "SubNotice",
+                "Puedes comprar objetos normales al pasar por la Tienda. La Caja Especial requiere caer exactamente en la casilla.",
+                17, FontStyle.Italic, new Color(0.82f, 0.92f, 0.82f), TextAnchor.MiddleLeft,
+                new Vector2(0.04f, 0.80f), new Vector2(0.96f, 0.88f));
+
+            GameObject gridObj = CreateBox(window.transform, "Items_Grid", Color.clear,
+                new Vector2(0.04f, 0.18f), new Vector2(0.96f, 0.79f));
+            GridLayoutGroup grid = gridObj.AddComponent<GridLayoutGroup>();
+            grid.cellSize = new Vector2(335, 210);
+            grid.spacing = new Vector2(18, 16);
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = 4;
+            grid.childAlignment = TextAnchor.UpperCenter;
+            shopGridContainer = gridObj.transform;
+
+            shopFeedbackText = CreateText(window.transform, "Feedback", "Haz clic en un objeto para comprarlo.", 19, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleLeft, new Vector2(0.04f, 0.04f), new Vector2(0.72f, 0.15f));
+
+            CreateStyledButton(window.transform, "Btn_CloseShop", "Continuar Turno",
+                new Vector2(0.74f, 0.04f), new Vector2(0.96f, 0.15f),
+                AccentGreenColor, Color.white, 22, () => shopModalPanel.SetActive(false));
+
+            shopModalPanel.SetActive(false);
+        }
+
+        // ---------------------------------------------------------------------
+        // 5C. MODAL DE MOCHILA (INVENTARIO) Y HECHIZOS ("Hechizos.jpg")
+        // ---------------------------------------------------------------------
+        private void BuildBagAndMagicModalPanel(Transform parent)
+        {
+            bagAndMagicModalPanel = CreatePanel(parent, "BagAndMagic_ModalOverlay", new Color(0.03f, 0.02f, 0.05f, 0.85f));
+
+            GameObject window = CreateBox(bagAndMagicModalPanel.transform, "Bag_Window", CardBgColor,
+                new Vector2(0.12f, 0.12f), new Vector2(0.88f, 0.88f));
+            AddOutline(window, new Color(0.68f, 0.35f, 0.95f), 4f);
+
+            bagHeaderText = CreateText(window.transform, "Header", "MOCHILA DE OBJETOS Y MAGIA LUNAR", 30, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleCenter, new Vector2(0.04f, 0.88f), new Vector2(0.96f, 0.98f));
+
+            // Panel superior de Hechizo equipado + Selector de jugador objetivo + Selector de pasos (Lupa/Paso Ligero)
+            GameObject spellBox = CreateBox(window.transform, "Spell_Section", new Color(0.14f, 0.11f, 0.22f, 0.95f),
+                new Vector2(0.04f, 0.62f), new Vector2(0.96f, 0.86f));
+            AddOutline(spellBox, new Color(0.55f, 0.35f, 0.85f), 2f);
+
+            bagSpellInfoText = CreateText(spellBox.transform, "SpellInfo", "Hechizo Equipado: Ninguno (Maná: 0)", 19, FontStyle.Bold,
+                new Color(0.85f, 0.78f, 1f), TextAnchor.MiddleLeft, new Vector2(0.02f, 0.52f), new Vector2(0.72f, 0.96f));
+
+            CreateStyledButton(spellBox.transform, "Btn_CastSpell", "Lanzar Hechizo",
+                new Vector2(0.74f, 0.54f), new Vector2(0.98f, 0.92f),
+                new Color(0.55f, 0.25f, 0.85f, 1f), Color.white, 19, CastEquippedTurnSpellFromUI);
+
+            // Selector de Jugador Objetivo (para Pistola, Teletransporte, Congelar, Ralentizar, Muerte, Limpieza)
+            CreateText(spellBox.transform, "Lbl_Target", "Jugador Objetivo:", 17, FontStyle.Bold,
+                Color.white, TextAnchor.MiddleLeft, new Vector2(0.02f, 0.06f), new Vector2(0.18f, 0.46f));
+
+            CreateStyledButton(spellBox.transform, "Btn_PrevTarget", "<",
+                new Vector2(0.19f, 0.10f), new Vector2(0.24f, 0.44f),
+                CreamButtonColor, DarkBorderColor, 18, () => CycleTargetPlayer(-1));
+
+            bagTargetPlayerText = CreateText(spellBox.transform, "Txt_TargetPlayer", "Jugador 2", 18, FontStyle.Bold,
+                new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleCenter, new Vector2(0.25f, 0.06f), new Vector2(0.45f, 0.46f));
+
+            CreateStyledButton(spellBox.transform, "Btn_NextTarget", ">",
+                new Vector2(0.46f, 0.10f), new Vector2(0.51f, 0.44f),
+                CreamButtonColor, DarkBorderColor, 18, () => CycleTargetPlayer(1));
+
+            // Ajuste de pasos exactos cuando Lupa o Paso Ligero están activos
+            bagStepControlText = CreateText(spellBox.transform, "Txt_StepForced", "Tirada Fija (Lupa/Paso Ligero): Automática", 16, FontStyle.Bold,
+                new Color(0.75f, 0.95f, 0.75f), TextAnchor.MiddleRight, new Vector2(0.53f, 0.06f), new Vector2(0.84f, 0.46f));
+
+            CreateStyledButton(spellBox.transform, "Btn_StepMinus", "-",
+                new Vector2(0.85f, 0.10f), new Vector2(0.91f, 0.44f),
+                CreamButtonColor, DarkBorderColor, 18, () => AdjustForcedMoveSteps(-1));
+
+            CreateStyledButton(spellBox.transform, "Btn_StepPlus", "+",
+                new Vector2(0.92f, 0.10f), new Vector2(0.98f, 0.44f),
+                CreamButtonColor, DarkBorderColor, 18, () => AdjustForcedMoveSteps(1));
+
+            // Grilla de Objetos en Inventario
+            GameObject itemsBox = CreateBox(window.transform, "BagItems_Grid", Color.clear,
+                new Vector2(0.04f, 0.18f), new Vector2(0.96f, 0.59f));
+            GridLayoutGroup grid = itemsBox.AddComponent<GridLayoutGroup>();
+            grid.cellSize = new Vector2(315, 130);
+            grid.spacing = new Vector2(14, 12);
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = 4;
+            grid.childAlignment = TextAnchor.UpperLeft;
+            bagItemsContainer = itemsBox.transform;
+
+            bagFeedbackText = CreateText(window.transform, "Feedback",
+                "Haz clic en un objeto de tu mochila para usarlo antes de tirar el dado.",
+                18, FontStyle.Bold, CreamButtonColor, TextAnchor.MiddleLeft,
+                new Vector2(0.04f, 0.04f), new Vector2(0.72f, 0.15f));
+
+            CreateMockupMenuButton(window.transform, "Btn_CloseBag", "Cerrar Mochila",
+                new Vector2(0.74f, 0.04f), new Vector2(0.96f, 0.15f), () => bagAndMagicModalPanel.SetActive(false));
+
+            bagAndMagicModalPanel.SetActive(false);
         }
 
         // ---------------------------------------------------------------------
@@ -740,19 +966,19 @@ namespace Oca2.UI
             combatModalPanel = CreatePanel(parent, "Combat_ModalOverlay", new Color(0.03f, 0.02f, 0.02f, 0.82f));
 
             GameObject arenaWindow = CreateBox(combatModalPanel.transform, "Combat_ArenaWindow", new Color(0.16f, 0.12f, 0.12f, 0.98f),
-                new Vector2(0.14f, 0.14f), new Vector2(0.86f, 0.86f));
+                new Vector2(0.12f, 0.10f), new Vector2(0.88f, 0.90f));
             AddOutline(arenaWindow, new Color(0.85f, 0.18f, 0.18f), 4f);
 
             // Cabecera del combate
             GameObject headerBar = CreateBox(arenaWindow.transform, "Header", new Color(0.55f, 0.08f, 0.08f, 1f),
-                new Vector2(0f, 0.86f), new Vector2(1f, 1f));
-            combatHeaderTitleText = CreateText(headerBar.transform, "Txt_CombatTitle", "¡ENCUENTRO DE COMBATE!", 36, FontStyle.Bold,
+                new Vector2(0f, 0.88f), new Vector2(1f, 1f));
+            combatHeaderTitleText = CreateText(headerBar.transform, "Txt_CombatTitle", "¡ENCUENTRO DE COMBATE!", 34, FontStyle.Bold,
                 CreamButtonColor, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
             AddShadow(combatHeaderTitleText.gameObject, Color.black, new Vector2(3f, -3f));
 
             // Tarjeta Izquierda: Jugador Atacante
             GameObject leftCard = CreateBox(arenaWindow.transform, "Attacker_Card", new Color(0.12f, 0.20f, 0.14f, 0.96f),
-                new Vector2(0.04f, 0.32f), new Vector2(0.43f, 0.83f));
+                new Vector2(0.04f, 0.40f), new Vector2(0.43f, 0.85f));
             AddOutline(leftCard, AccentGreenColor, 3f);
 
             GameObject attPortraitBg = CreateBox(leftCard.transform, "Portrait_Bg", new Color(0.95f, 0.94f, 0.88f, 1f),
@@ -763,23 +989,23 @@ namespace Oca2.UI
             attackerPortraitImg = attImgObj.GetComponent<Image>();
             attackerPortraitImg.preserveAspect = true;
 
-            attackerNameText = CreateText(leftCard.transform, "Txt_AttName", "Jugador 1", 24, FontStyle.Bold,
+            attackerNameText = CreateText(leftCard.transform, "Txt_AttName", "Jugador 1", 22, FontStyle.Bold,
                 Color.white, TextAnchor.MiddleCenter, new Vector2(0.05f, 0.30f), new Vector2(0.95f, 0.42f));
 
-            attackerFormulaText = CreateText(leftCard.transform, "Txt_AttFormula", "Fuerza de Combate: 1d6", 20, FontStyle.Bold,
+            attackerFormulaText = CreateText(leftCard.transform, "Txt_AttFormula", "Fuerza de Combate: 1d6", 18, FontStyle.Bold,
                 new Color(0.75f, 0.95f, 0.75f), TextAnchor.MiddleCenter, new Vector2(0.05f, 0.18f), new Vector2(0.95f, 0.30f));
 
-            attackerRollResultText = CreateText(leftCard.transform, "Txt_AttRoll", "Tirada: —", 24, FontStyle.Bold,
+            attackerRollResultText = CreateText(leftCard.transform, "Txt_AttRoll", "Tirada: —", 22, FontStyle.Bold,
                 new Color(1f, 0.90f, 0.35f), TextAnchor.MiddleCenter, new Vector2(0.05f, 0.03f), new Vector2(0.95f, 0.17f));
 
             // Emblema central VS
-            Text vsText = CreateText(arenaWindow.transform, "Txt_VS", "VS", 58, FontStyle.BoldAndItalic,
-                TitleRedColor, TextAnchor.MiddleCenter, new Vector2(0.43f, 0.48f), new Vector2(0.57f, 0.70f));
+            Text vsText = CreateText(arenaWindow.transform, "Txt_VS", "VS", 54, FontStyle.BoldAndItalic,
+                TitleRedColor, TextAnchor.MiddleCenter, new Vector2(0.43f, 0.54f), new Vector2(0.57f, 0.74f));
             AddShadow(vsText.gameObject, Color.black, new Vector2(3f, -3f));
 
             // Tarjeta Derecha: Defensor (Boss u Oca Rival)
             GameObject rightCard = CreateBox(arenaWindow.transform, "Defender_Card", new Color(0.24f, 0.12f, 0.12f, 0.96f),
-                new Vector2(0.57f, 0.32f), new Vector2(0.96f, 0.83f));
+                new Vector2(0.57f, 0.40f), new Vector2(0.96f, 0.85f));
             AddOutline(rightCard, TitleRedColor, 3f);
 
             GameObject defPortraitBg = CreateBox(rightCard.transform, "Portrait_Bg", new Color(0.95f, 0.94f, 0.88f, 1f),
@@ -790,28 +1016,53 @@ namespace Oca2.UI
             defenderPortraitImg = defImgObj.GetComponent<Image>();
             defenderPortraitImg.preserveAspect = true;
 
-            defenderNameText = CreateText(rightCard.transform, "Txt_DefName", "La Foca", 24, FontStyle.Bold,
+            defenderNameText = CreateText(rightCard.transform, "Txt_DefName", "La Foca", 22, FontStyle.Bold,
                 Color.white, TextAnchor.MiddleCenter, new Vector2(0.05f, 0.30f), new Vector2(0.95f, 0.42f));
 
-            defenderFormulaText = CreateText(rightCard.transform, "Txt_DefFormula", "Fuerza de Combate: 1d8", 20, FontStyle.Bold,
+            defenderFormulaText = CreateText(rightCard.transform, "Txt_DefFormula", "Fuerza de Combate: 1d8", 18, FontStyle.Bold,
                 new Color(1f, 0.75f, 0.75f), TextAnchor.MiddleCenter, new Vector2(0.05f, 0.18f), new Vector2(0.95f, 0.30f));
 
-            defenderRollResultText = CreateText(rightCard.transform, "Txt_DefRoll", "Tirada: —", 24, FontStyle.Bold,
+            defenderRollResultText = CreateText(rightCard.transform, "Txt_DefRoll", "Tirada: —", 22, FontStyle.Bold,
                 new Color(1f, 0.90f, 0.35f), TextAnchor.MiddleCenter, new Vector2(0.05f, 0.03f), new Vector2(0.95f, 0.17f));
+
+            // Barra de Objetos y Hechizos de Combate (Armadura +5, Espada +8, Pentagrama -1d6, UNO Reverse, Hechizo Combate)
+            GameObject combatToolsBar = CreateBox(arenaWindow.transform, "CombatTools_Bar", new Color(0.11f, 0.11f, 0.14f, 0.95f),
+                new Vector2(0.04f, 0.29f), new Vector2(0.96f, 0.38f));
+            AddOutline(combatToolsBar, DarkBorderColor, 2f);
+
+            CreateStyledButton(combatToolsBar.transform, "Btn_UseArmor", "Armadura (+5)",
+                new Vector2(0.01f, 0.12f), new Vector2(0.19f, 0.88f),
+                CreamButtonColor, DarkBorderColor, 15, () => TryUseCombatItemFromUI(ItemType.Armadura));
+
+            CreateStyledButton(combatToolsBar.transform, "Btn_UseSword", "Espada (+8)",
+                new Vector2(0.20f, 0.12f), new Vector2(0.38f, 0.88f),
+                CreamButtonColor, DarkBorderColor, 15, () => TryUseCombatItemFromUI(ItemType.Espada));
+
+            CreateStyledButton(combatToolsBar.transform, "Btn_UsePentagram", "Pentagrama (-1d6)",
+                new Vector2(0.39f, 0.12f), new Vector2(0.59f, 0.88f),
+                CreamButtonColor, DarkBorderColor, 15, () => TryUseCombatItemFromUI(ItemType.Pentagrama));
+
+            CreateStyledButton(combatToolsBar.transform, "Btn_UseUnoReverse", "UNO Reverse",
+                new Vector2(0.60f, 0.12f), new Vector2(0.78f, 0.88f),
+                new Color(0.95f, 0.78f, 0.20f), DarkBorderColor, 15, () => TryUseCombatItemFromUI(ItemType.CartaUNOReverse));
+
+            CreateStyledButton(combatToolsBar.transform, "Btn_CastCombatSpell", "Hechizo Combate",
+                new Vector2(0.79f, 0.12f), new Vector2(0.99f, 0.88f),
+                new Color(0.55f, 0.25f, 0.85f), Color.white, 15, TryCastCombatSpellFromUI);
 
             // Narración / Resultado del Combate
             GameObject narrationBox = CreateBox(arenaWindow.transform, "Narration_Box", new Color(0.09f, 0.09f, 0.09f, 0.95f),
-                new Vector2(0.04f, 0.16f), new Vector2(0.96f, 0.30f));
+                new Vector2(0.04f, 0.14f), new Vector2(0.96f, 0.27f));
             AddOutline(narrationBox, DarkBorderColor, 2f);
 
             combatNarrationText = CreateText(narrationBox.transform, "Txt_Narration",
-                "¡Lanza los dados de combate! El ganador recibe +3 de EXP y el perdedor muere.", 20, FontStyle.Bold,
+                "¡Lanza los dados de combate! El ganador recibe +3 de EXP y el perdedor muere.", 19, FontStyle.Bold,
                 CreamButtonColor, TextAnchor.MiddleCenter, new Vector2(0.03f, 0.05f), new Vector2(0.97f, 0.95f));
 
             // Botones de acción de combate
             combatRollBtn = CreateStyledButton(arenaWindow.transform, "Btn_CombatRoll", "¡LANZAR DADOS DE COMBATE!",
-                new Vector2(0.16f, 0.03f), new Vector2(0.56f, 0.13f),
-                TitleRedColor, Color.white, 24, () =>
+                new Vector2(0.16f, 0.025f), new Vector2(0.56f, 0.12f),
+                TitleRedColor, Color.white, 22, () =>
                 {
                     if (CombatManager.Instance != null)
                     {
@@ -820,8 +1071,8 @@ namespace Oca2.UI
                 });
 
             combatContinueBtn = CreateStyledButton(arenaWindow.transform, "Btn_CombatContinue", "Continuar Partida",
-                new Vector2(0.60f, 0.03f), new Vector2(0.88f, 0.13f),
-                AccentGreenColor, Color.white, 24, () =>
+                new Vector2(0.60f, 0.025f), new Vector2(0.88f, 0.12f),
+                AccentGreenColor, Color.white, 22, () =>
                 {
                     if (CombatManager.Instance != null)
                     {
@@ -1045,7 +1296,287 @@ namespace Oca2.UI
         private void HandleMatchEndedToMenu()
         {
             if (combatModalPanel != null) combatModalPanel.SetActive(false);
+            if (skillTreeModalPanel != null) skillTreeModalPanel.SetActive(false);
+            if (shopModalPanel != null) shopModalPanel.SetActive(false);
+            if (bagAndMagicModalPanel != null) bagAndMagicModalPanel.SetActive(false);
             ShowMainMenu();
+        }
+
+        // =====================================================================
+        // CONTROLADORES DE MODALES: ÁRBOL DE HABILIDADES, TIENDA Y MOCHILA/MAGIA
+        // =====================================================================
+
+        public void OpenSkillTreeModal()
+        {
+            if (skillTreeModalPanel == null) return;
+            RefreshSkillTreeModal();
+            skillTreeModalPanel.SetActive(true);
+        }
+
+        private void RefreshSkillTreeModal()
+        {
+            if (GameSessionManager.Instance == null) return;
+            PlayerOcaToken token = GameSessionManager.Instance.GetCurrentTurnToken();
+            if (token == null) return;
+
+            PlayerSetupData pData = token.PlayerData;
+            if (skillTreeHeaderText != null)
+            {
+                skillTreeHeaderText.text =
+                    $"ÁRBOL DE HABILIDADES — {pData.playerName.ToUpper()}  |  NIVEL {pData.expLevel}/22 (EXP: {pData.currentExp}/{pData.expLevel})  |  PUNTOS: {pData.unspentSkillPoints}";
+            }
+
+            if (skillTreePassiveText != null)
+            {
+                skillTreePassiveText.text = SkillTreeAndAbilities.GetOcaPassiveDescription(pData.selectedOca);
+            }
+
+            if (skillBranchMovText != null)
+                skillBranchMovText.text = $"{pData.movementBranchNodes} / 5 nodos";
+            if (skillBranchCombLeftText != null)
+                skillBranchCombLeftText.text = $"{pData.combatLeftBranchNodes} / 3 nodos";
+            if (skillBranchCombRightText != null)
+                skillBranchCombRightText.text = $"{pData.combatRightBranchNodes} / 3 nodos";
+            if (skillBranchWealthText != null)
+                skillBranchWealthText.text = $"{pData.wealthBranchNodes} / 5 (+{SkillTreeAndAbilities.GetCoinsPerMoneyTile(pData)} Moneda/casilla)";
+            if (skillBranchMagicText != null)
+                skillBranchMagicText.text = $"{pData.magicBranchNodes} / 5 (+{SkillTreeAndAbilities.GetManaPerFullMoon(pData)} Maná/luna)";
+        }
+
+        private void UpgradeSkillBranchFromUI(SkillBranchType branch)
+        {
+            if (GameSessionManager.Instance == null) return;
+            GameSessionManager.Instance.TryUpgradeCurrentPlayerSkill(branch, out string msg);
+            if (skillTreeFeedbackText != null) skillTreeFeedbackText.text = msg;
+            RefreshSkillTreeModal();
+            RefreshInGameHudPlayers();
+        }
+
+        private void HandleShopTriggered(PlayerOcaToken buyerToken, bool isHellShop, bool landedExactly)
+        {
+            if (shopModalPanel == null || buyerToken == null) return;
+            RefreshShopModal(buyerToken.PlayerData, isHellShop, landedExactly);
+            shopModalPanel.SetActive(true);
+        }
+
+        private void RefreshShopModal(PlayerSetupData buyer, bool isHellShop, bool landedExactly)
+        {
+            if (buyer == null || shopGridContainer == null) return;
+
+            if (shopHeaderTitleText != null)
+            {
+                shopHeaderTitleText.text = isHellShop ? "TIENDA DEL INFIERNO" : "TIENDA PRINCIPAL";
+            }
+
+            if (shopPlayerCoinsText != null)
+            {
+                shopPlayerCoinsText.text = $"Monedas de {buyer.playerName}: {buyer.coins}";
+            }
+
+            if (shopSubNoticeText != null)
+            {
+                string specialBox = isHellShop ? "Caja Roja (Espada y Pistola)" : "Caja Verde (Lupa y Carta UNO Reverse)";
+                shopSubNoticeText.text = landedExactly
+                    ? $"¡Caíste EXACTAMENTE en la Tienda! Tienes acceso completo, incluyendo la {specialBox}."
+                    : $"Pasaste por encima de la Tienda: puedes comprar objetos normales ({specialBox} bloqueada).";
+            }
+
+            for (int i = shopGridContainer.childCount - 1; i >= 0; i--)
+            {
+                Destroy(shopGridContainer.GetChild(i).gameObject);
+            }
+
+            var items = ShopAndItemsSystem.GetShopItems(isHellShop);
+            foreach (var itemDef in items)
+            {
+                bool lockedByExact = itemDef.requiresExactLanding && !landedExactly;
+                Color cardColor = itemDef.requiresExactLanding
+                    ? (isHellShop ? new Color(0.32f, 0.12f, 0.12f, 0.96f) : new Color(0.12f, 0.28f, 0.14f, 0.96f))
+                    : new Color(0.16f, 0.19f, 0.16f, 0.96f);
+
+                GameObject card = CreateBox(shopGridContainer, $"ShopItem_{itemDef.itemType}", cardColor, Vector2.zero, Vector2.one);
+                AddOutline(card, lockedByExact ? Color.gray : new Color(0.95f, 0.78f, 0.22f), 2f);
+
+                if (itemDef.sprite != null)
+                {
+                    GameObject iconObj = CreateBox(card.transform, "Icon", Color.white,
+                        new Vector2(0.04f, 0.28f), new Vector2(0.28f, 0.92f));
+                    Image iconImg = iconObj.GetComponent<Image>();
+                    iconImg.sprite = itemDef.sprite;
+                    iconImg.preserveAspect = true;
+                }
+
+                CreateText(card.transform, "Name", $"{itemDef.displayName} ({itemDef.priceCoins} Mon.)", 18, FontStyle.Bold,
+                    CreamButtonColor, TextAnchor.MiddleLeft, new Vector2(0.31f, 0.66f), new Vector2(0.96f, 0.95f));
+
+                CreateText(card.transform, "Desc", itemDef.shortEffect, 14, FontStyle.Normal,
+                    Color.white, TextAnchor.UpperLeft, new Vector2(0.31f, 0.28f), new Vector2(0.96f, 0.66f));
+
+                ItemType capturedType = itemDef.itemType;
+                string btnLabel = lockedByExact ? "Requiere Caída Exacta" : $"Comprar ({itemDef.priceCoins} Mon.)";
+                Button buyBtn = CreateStyledButton(card.transform, "Btn_Buy", btnLabel,
+                    new Vector2(0.06f, 0.04f), new Vector2(0.94f, 0.24f),
+                    lockedByExact ? new Color(0.35f, 0.35f, 0.35f) : AccentGreenColor, Color.white, 15, () =>
+                    {
+                        if (GameSessionManager.Instance != null)
+                        {
+                            GameSessionManager.Instance.TryBuyShopItemForCurrentPlayer(capturedType, out string msg);
+                            if (shopFeedbackText != null) shopFeedbackText.text = msg;
+                            RefreshShopModal(buyer, isHellShop, landedExactly);
+                            RefreshInGameHudPlayers();
+                        }
+                    });
+                buyBtn.interactable = !lockedByExact && buyer.coins >= itemDef.priceCoins;
+            }
+        }
+
+        public void OpenBagAndMagicModal()
+        {
+            if (bagAndMagicModalPanel == null || GameSessionManager.Instance == null) return;
+            int total = GameSessionManager.Instance.ActiveTokens.Count;
+            if (total > 1 && selectedTargetPlayerIdx == GameSessionManager.Instance.CurrentTurnPlayerIndex)
+            {
+                selectedTargetPlayerIdx = (GameSessionManager.Instance.CurrentTurnPlayerIndex + 1) % total;
+            }
+            RefreshBagAndMagicModal();
+            bagAndMagicModalPanel.SetActive(true);
+        }
+
+        private void CycleTargetPlayer(int delta)
+        {
+            if (GameSessionManager.Instance == null) return;
+            int count = GameSessionManager.Instance.ActiveTokens.Count;
+            if (count <= 0) return;
+            selectedTargetPlayerIdx = (selectedTargetPlayerIdx + delta) % count;
+            if (selectedTargetPlayerIdx < 0) selectedTargetPlayerIdx += count;
+            RefreshBagAndMagicModal();
+        }
+
+        private void AdjustForcedMoveSteps(int delta)
+        {
+            if (GameSessionManager.Instance == null) return;
+            PlayerOcaToken token = GameSessionManager.Instance.GetCurrentTurnToken();
+            if (token == null) return;
+
+            PlayerSetupData pData = token.PlayerData;
+            if (pData.forcedNextMoveRoll <= 0)
+            {
+                if (bagFeedbackText != null)
+                    bagFeedbackText.text = "Usa primero una Lupa o el hechizo Paso Ligero para elegir tus pasos exactos.";
+                return;
+            }
+
+            SkillTreeAndAbilities.GetMovementRollParameters(pData, out _, out _, out int minStep, out int maxStep);
+            pData.forcedNextMoveRoll = Mathf.Clamp(pData.forcedNextMoveRoll + delta, minStep, maxStep);
+            RefreshBagAndMagicModal();
+        }
+
+        private void CastEquippedTurnSpellFromUI()
+        {
+            if (GameSessionManager.Instance == null) return;
+            GameSessionManager.Instance.TryCastTurnSpellForCurrentPlayer(selectedTargetPlayerIdx, out string msg);
+            if (bagFeedbackText != null) bagFeedbackText.text = msg;
+            RefreshBagAndMagicModal();
+            RefreshInGameHudPlayers();
+        }
+
+        private void RefreshBagAndMagicModal()
+        {
+            if (GameSessionManager.Instance == null || bagItemsContainer == null) return;
+            PlayerOcaToken token = GameSessionManager.Instance.GetCurrentTurnToken();
+            if (token == null) return;
+
+            PlayerSetupData pData = token.PlayerData;
+
+            if (bagHeaderText != null)
+            {
+                bagHeaderText.text = $"MOCHILA Y MAGIA — {pData.playerName.ToUpper()} (Monedas: {pData.coins} | Maná: {pData.mana})";
+            }
+
+            SpellDefinition spellDef = SpellsAndWildCardsSystem.GetSpellDefinition(pData.currentSpell);
+            if (bagSpellInfoText != null)
+            {
+                bagSpellInfoText.text = spellDef != null
+                    ? $"Hechizo: {spellDef.displayName} (Coste: {spellDef.manaCost} Maná) — {spellDef.description}"
+                    : $"Hechizo Equipado: Ninguno (Cae en una Casilla de Hechizos para aprender uno) | Maná actual: {pData.mana}";
+            }
+
+            var tokens = GameSessionManager.Instance.ActiveTokens;
+            if (bagTargetPlayerText != null && tokens.Count > 0)
+            {
+                selectedTargetPlayerIdx = Mathf.Clamp(selectedTargetPlayerIdx, 0, tokens.Count - 1);
+                bagTargetPlayerText.text = tokens[selectedTargetPlayerIdx].PlayerData.playerName;
+            }
+
+            if (bagStepControlText != null)
+            {
+                if (pData.forcedNextMoveRoll > 0)
+                {
+                    SkillTreeAndAbilities.GetMovementRollParameters(pData, out _, out _, out int minS, out int maxS);
+                    bagStepControlText.text = $"Pasos Elegidos: {pData.forcedNextMoveRoll} (Rango {minS}-{maxS})";
+                }
+                else
+                {
+                    bagStepControlText.text = "Pasos Fijos (Lupa/Paso Ligero): Inactivo";
+                }
+            }
+
+            for (int i = bagItemsContainer.childCount - 1; i >= 0; i--)
+            {
+                Destroy(bagItemsContainer.GetChild(i).gameObject);
+            }
+
+            if (pData.inventory.Count == 0)
+            {
+                CreateText(bagItemsContainer, "EmptyMsg", "Tu mochila está vacía. Pasa por una Tienda para comprar objetos.",
+                    18, FontStyle.Italic, new Color(0.8f, 0.8f, 0.8f), TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
+                return;
+            }
+
+            foreach (ItemType itemType in pData.inventory)
+            {
+                ShopItemDefinition def = ShopAndItemsSystem.GetDefinition(itemType);
+                if (def == null) continue;
+
+                GameObject card = CreateBox(bagItemsContainer, $"InvItem_{itemType}", new Color(0.16f, 0.20f, 0.16f, 0.96f), Vector2.zero, Vector2.one);
+                AddOutline(card, CreamButtonColor, 2f);
+
+                CreateText(card.transform, "Title", def.displayName, 17, FontStyle.Bold,
+                    CreamButtonColor, TextAnchor.MiddleLeft, new Vector2(0.05f, 0.68f), new Vector2(0.95f, 0.96f));
+
+                CreateText(card.transform, "Desc", def.shortEffect, 13, FontStyle.Normal,
+                    Color.white, TextAnchor.UpperLeft, new Vector2(0.05f, 0.30f), new Vector2(0.95f, 0.68f));
+
+                ItemType captured = itemType;
+                CreateStyledButton(card.transform, "Btn_Use", def.usableInTurn ? "Usar Ahora" : "Uso en Combate",
+                    new Vector2(0.08f, 0.05f), new Vector2(0.92f, 0.28f),
+                    def.usableInTurn ? AccentGreenColor : new Color(0.4f, 0.4f, 0.4f), Color.white, 14, () =>
+                    {
+                        if (GameSessionManager.Instance != null)
+                        {
+                            GameSessionManager.Instance.TryUseTurnItemForCurrentPlayer(captured, selectedTargetPlayerIdx, out string msg);
+                            if (bagFeedbackText != null) bagFeedbackText.text = msg;
+                            RefreshBagAndMagicModal();
+                            RefreshInGameHudPlayers();
+                        }
+                    });
+            }
+        }
+
+        private void TryUseCombatItemFromUI(ItemType itemType)
+        {
+            if (CombatManager.Instance == null) return;
+            CombatManager.Instance.TryUseCombatItem(itemType, out string msg);
+            if (combatNarrationText != null) combatNarrationText.text = msg;
+            RefreshInGameHudPlayers();
+        }
+
+        private void TryCastCombatSpellFromUI()
+        {
+            if (CombatManager.Instance == null) return;
+            CombatManager.Instance.TryCastCombatSpell(out string msg);
+            if (combatNarrationText != null) combatNarrationText.text = msg;
+            RefreshInGameHudPlayers();
         }
 
         private void HandleCombatStarted(CombatEncounter encounter)
@@ -1065,7 +1596,7 @@ namespace Oca2.UI
 
             if (attackerPortraitImg != null && attOca != null) attackerPortraitImg.sprite = attOca.sprite;
             if (attackerNameText != null) attackerNameText.text = $"{attData.playerName} (Nivel {attData.expLevel})";
-            if (attackerFormulaText != null) attackerFormulaText.text = $"Fuerza: {encounter.attackerFormula}";
+            if (attackerFormulaText != null) attackerFormulaText.text = $"Fuerza: {encounter.attackerFormulaText}";
             if (attackerRollResultText != null) attackerRollResultText.text = "Tirada: ?";
 
             // Configurar datos del Defensor (Boss o Jugador Rival)
@@ -1094,7 +1625,7 @@ namespace Oca2.UI
                     defenderNameText.text = $"{defData.playerName} (Nivel {defData.expLevel})";
             }
 
-            if (defenderFormulaText != null) defenderFormulaText.text = $"Fuerza: {encounter.defenderFormula}";
+            if (defenderFormulaText != null) defenderFormulaText.text = $"Fuerza: {encounter.defenderFormulaText}";
             if (defenderRollResultText != null) defenderRollResultText.text = "Tirada: ?";
             if (combatNarrationText != null) combatNarrationText.text = encounter.resultSummary;
 
@@ -1106,7 +1637,12 @@ namespace Oca2.UI
         {
             if (encounter == null) return;
 
-            if (attackerRollResultText != null)
+            if (attackerFormulaText != null)
+                attackerFormulaText.text = $"Fuerza: {encounter.attackerFormulaText}";
+            if (defenderFormulaText != null)
+                defenderFormulaText.text = $"Fuerza: {encounter.defenderFormulaText}";
+
+            if (attackerRollResultText != null && encounter.attackerRolls.Count > 0)
             {
                 attackerRollResultText.text = "Tirada: " + CombatManager.FormatRolls(
                     encounter.attackerRolls,
@@ -1115,7 +1651,7 @@ namespace Oca2.UI
                 );
             }
 
-            if (defenderRollResultText != null)
+            if (defenderRollResultText != null && encounter.defenderRolls.Count > 0)
             {
                 defenderRollResultText.text = "Tirada: " + CombatManager.FormatRolls(
                     encounter.defenderRolls,
@@ -1129,8 +1665,7 @@ namespace Oca2.UI
                 combatNarrationText.text = encounter.resultSummary;
             }
 
-            // Si hubo empate, permitir volver a tirar; si ya hay ganador, habilitar Continuar
-            if (combatRollBtn != null) combatRollBtn.interactable = encounter.isTie;
+            if (combatRollBtn != null) combatRollBtn.interactable = !encounter.hasRolled || encounter.isTie;
             if (combatContinueBtn != null) combatContinueBtn.interactable = encounter.hasRolled && !encounter.isTie;
         }
 
@@ -1149,12 +1684,29 @@ namespace Oca2.UI
                 activePlayerIdx >= 0 &&
                 activePlayerIdx < GameSessionManager.Instance.ActiveTokens.Count)
             {
-                var token = GameSessionManager.Instance.ActiveTokens[activePlayerIdx];
-                var ocaDef = GameSessionManager.Instance.GetOcaDefinition(token.PlayerData.selectedOca);
-                string ocaTitle = ocaDef != null ? ocaDef.displayName : token.PlayerData.selectedOca.ToString();
+                var mgr = GameSessionManager.Instance;
+                var token = mgr.ActiveTokens[activePlayerIdx];
+                var pData = token.PlayerData;
+                var ocaDef = mgr.GetOcaDefinition(pData.selectedOca);
+                string ocaTitle = ocaDef != null ? ocaDef.displayName : pData.selectedOca.ToString();
+                string[] moonNames = { "Luna Nueva (1/4)", "Cuarto Creciente (2/4)", "Gibosa (3/4)", "¡LUNA LLENA! (4/4)" };
+                string moonStr = moonNames[Mathf.Clamp(mgr.MoonPhase, 0, 3)];
+
                 if (hudTurnHeaderText != null)
                 {
-                    hudTurnHeaderText.text = $"Ronda {GameSessionManager.Instance.CurrentRound}  •  Turno de: {token.PlayerData.playerName} ({ocaTitle})";
+                    hudTurnHeaderText.text = $"Ronda {mgr.CurrentRound} [{moonStr}]  •  Turno: {pData.playerName} ({ocaTitle})";
+                }
+
+                if (skillTreeBtnLabel != null)
+                {
+                    skillTreeBtnLabel.text = pData.unspentSkillPoints > 0
+                        ? $"Árbol EXP ({pData.unspentSkillPoints}!)"
+                        : $"Árbol EXP (Nvl {pData.expLevel})";
+                }
+
+                if (bagSpellBtnLabel != null)
+                {
+                    bagSpellBtnLabel.text = $"Mochila ({pData.inventory.Count}) / Magia";
                 }
             }
 
@@ -1194,22 +1746,24 @@ namespace Oca2.UI
 
                 // Avatar de la Oca
                 GameObject avatarObj = CreateBox(badge.transform, "Avatar", Color.white,
-                    new Vector2(0.07f, 0.10f), new Vector2(0.28f, 0.90f));
+                    new Vector2(0.07f, 0.10f), new Vector2(0.26f, 0.90f));
                 Image avatarImg = avatarObj.GetComponent<Image>();
                 if (ocaDef != null) avatarImg.sprite = ocaDef.sprite;
                 avatarImg.preserveAspect = true;
 
-                // Nombre + Oca
+                // Nombre + Oca + Estado Zombi/Hechizo
                 string ocaLabel = ocaDef != null ? ocaDef.displayName : pData.selectedOca.ToString();
-                CreateText(badge.transform, "Txt_Name", $"{pData.playerName}\n<size=12>{ocaLabel}</size>",
-                    15, FontStyle.Bold, Color.white, TextAnchor.MiddleLeft,
-                    new Vector2(0.30f, 0.45f), new Vector2(0.98f, 0.95f));
+                string extraTag = pData.isZombie ? " [ZOMBI]" : "";
+                CreateText(badge.transform, "Txt_Name", $"{pData.playerName}{extraTag}\n<size=11>{ocaLabel}</size>",
+                    14, FontStyle.Bold, Color.white, TextAnchor.MiddleLeft,
+                    new Vector2(0.28f, 0.48f), new Vector2(0.98f, 0.96f));
 
-                // Estadísticas: Monedas, EXP, Casilla
-                string stats = $"Monedas: {pData.coins} | EXP Nvl: {pData.expLevel} | Casilla: {token.CurrentTileIndex}";
+                // Estadísticas: Monedas, EXP, Maná, Casilla
+                string spellShort = pData.currentSpell != SpellType.None ? $" | Hechizo: {pData.currentSpell}" : "";
+                string stats = $"Mon: {pData.coins} | EXP Nvl {pData.expLevel} | Maná: {pData.mana}\nCasilla: {token.CurrentTileIndex} ({token.CurrentBoard}){spellShort}";
                 CreateText(badge.transform, "Txt_Stats", stats,
-                    13, FontStyle.Normal, new Color(1f, 0.92f, 0.55f), TextAnchor.MiddleLeft,
-                    new Vector2(0.30f, 0.05f), new Vector2(0.98f, 0.45f));
+                    12, FontStyle.Normal, new Color(1f, 0.92f, 0.55f), TextAnchor.MiddleLeft,
+                    new Vector2(0.28f, 0.04f), new Vector2(0.98f, 0.48f));
             }
         }
 

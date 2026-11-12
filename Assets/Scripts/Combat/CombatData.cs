@@ -12,8 +12,8 @@ namespace Oca2.Combat
     {
         None = 0,
         LaFoca = 1,      // Casilla 13 - Fuerza: 1d8
-        LaRoca = 2,      // Casilla 31 - Fuerza: 2d6
-        LaTrollface = 3  // Casilla 52 - Fuerza: 3d6
+        LaRoca = 2,      // Casilla 35 - Fuerza: 2d6
+        LaTrollface = 3  // Casilla 53 - Fuerza: 3d6
     }
 
     /// <summary>
@@ -43,7 +43,7 @@ namespace Oca2.Combat
                 individualRolls.Add(val);
                 sum += val;
             }
-            return sum + flatBonus;
+            return Mathf.Max(1, sum + flatBonus);
         }
 
         public override string ToString()
@@ -86,6 +86,14 @@ namespace Oca2.Combat
 
         public DiceFormula attackerFormula;
         public DiceFormula defenderFormula;
+        public string attackerFormulaText = "1d6";
+        public string defenderFormulaText = "1d6";
+
+        // Bonificaciones activas en este combate (Objetos: Armadura +5, Espada +8, Pentagrama -1d6 y Hechizos de combate)
+        public int attackerExtraCombatBonus = 0;
+        public int defenderPenaltyBonus = 0;
+        public bool usedFireball = false;
+        public bool usedEldritchBlast = false;
 
         public List<int> attackerRolls = new List<int>();
         public List<int> defenderRolls = new List<int>();
