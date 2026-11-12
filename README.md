@@ -55,7 +55,26 @@ Implementado siguiendo el diseño de **Interfaz y Experiencia de Usuario (UI/UX)
 
 ---
 
-### 2. Mundo 3D, Tableros y Sistema de Cámara (Etapa 1)
+### 2. Sistema de Combate y los 3 Bosses (Etapa 3)
+
+Implementado conforme a las reglas de las páginas 6, 8, 17, 18 y 27 del documento **TP2 (AE2)**:
+
+#### Los 3 Bosses del Tablero Principal (`CombatManager.cs`, `BossBoardToken.cs`, `CombatData.cs`)
+- **Instanciación 3D en el Tablero:** Al comenzar la partida, los 3 Bosses aparecen físicamente sobre sus casillas con un pedestal carmesí y su sprite orientado hacia la cámara con `OcaBillboard`:
+  1. **Casilla 13 — La Foca** (`La foca.png`): Fuerza de combate **`1d8`** (1 dado de 8 caras).
+  2. **Casilla 31 — La Roca** (`La roca.png`): Fuerza de combate **`2d6`** (2 dados de 6 caras).
+  3. **Casilla 52 — La Trollface** (`Trollface.png`): Fuerza de combate **`3d6`** (3 dados de 6 caras).
+- **Intercepción al pasar por encima (`GetBossInterceptOnPath`):** Si un jugador avanza con su tirada y pasa por encima (o cae) en la casilla de un Boss vivo, su movimiento se detiene en la casilla del Boss y se abre el duelo obligatorio. Si el jugador salta por encima usando las casillas *De Oca a Oca* (ej. de la 9 a la 14, de la 27 a la 32, o de la 50 a la 54), logra saltear al Boss como indica la pág. 4 y 27 del GDD.
+
+#### Combate entre Jugadores (PvP) y Resolución por Dados
+- **Duelos PvP (`GetPvPOpponentOnTile`):** Si un jugador termina su movimiento en una casilla ocupada por otro jugador (excepto en `START` y en el `Infierno 2`, donde no hay combates según la pág. 11), se inicia un combate directo entre ambos.
+- **Ventana Modal de Combate (`MainMenuUIController.cs`):** Muestra cara a cara las cartas del Atacante y del Defensor (Boss u Oca rival), sus fórmulas de fuerza (`1d6` base para las Ocas + bonos por nivel), el desglose de cada dado lanzado, repetición automática en caso de empate y aplicación del resultado:
+  - **Ganador:** Recibe **+3 de Experiencia** (subiendo de nivel automáticamente según la progresión de nivel 1 a 22). Si era contra un Boss, el Boss queda derrotado en el tablero.
+  - **Perdedor:** Muere y es enviado al **Tablero del Infierno 1** (o al **Infierno 2** si ya estaba en el Infierno 1), salvo que sea **Zombi** (inmortal).
+
+---
+
+### 3. Mundo 3D, Tableros y Sistema de Cámara (Etapa 1)
 
 - **4 Tableros 3D (`BoardManager.cs`, `BoardPath.cs`, `BoardTile.cs`, `TileType.cs`):**
   - **Tablero Principal (`MainBoard`):** Camino en espiral de 64 posiciones (`0 = START` a `63 = Meta`) con casillas tipadas (*Oca*, *Puente*, *Muerte*, *Dinero*, *Experiencia*, *Tienda*, *Hechizos*, *Cartas Salvajes*, *Boss*, *Zombi*).
@@ -80,6 +99,10 @@ Assets/Scripts/
 │   └── TileType.cs              # Enumeraciones de tipos de casilla (TileType) y tableros (BoardType)
 ├── Camera/
 │   └── BoardCameraController.cs # Cámara isométrica 3D con rotación cardinal, zoom, paneo y órbita en menú
+├── Combat/
+│   ├── BossBoardToken.cs        # Figura 3D de cada Boss (La Foca, La Roca, La Trollface) sobre el tablero
+│   ├── CombatData.cs            # Estructuras DiceFormula, BossDefinition y CombatEncounter
+│   └── CombatManager.cs         # Lógica de intercepción de Bosses, combates PvP y tiradas de fuerza
 ├── Core/
 │   └── GameSessionManager.cs    # Singleton de sesión: catálogo de 6 Ocas, opciones, turnos y spawn de jugadores
 ├── Data/

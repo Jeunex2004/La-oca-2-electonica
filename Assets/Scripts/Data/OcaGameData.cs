@@ -50,6 +50,7 @@ namespace Oca2.Data
         public int currentExp = 0;
         public int mana = 0;
         public bool isZombie = false;
+        public int combatFlatBonus = 0;
 
         public PlayerSetupData(int index, string name, OcaType oca, Color color, int initialCoins = 3, int initialLevel = 1)
         {

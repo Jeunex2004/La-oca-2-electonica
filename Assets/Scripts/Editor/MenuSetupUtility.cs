@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEditor;
+using Oca2.Combat;
 using Oca2.Core;
 using Oca2.UI;
 
@@ -21,6 +22,9 @@ namespace Oca2.Editor
             "La loca.png",
             "La barroca.png",
             "El xoca.png",
+            "La foca.png",
+            "La roca.png",
+            "Trollface.png",
             "Moneda.png",
             "EXP.png",
             "Mana.png"
@@ -50,6 +54,14 @@ namespace Oca2.Editor
             {
                 managerObj.AddComponent<MainMenuUIController>();
             }
+
+            CombatManager combatMgr = managerObj.GetComponent<CombatManager>();
+            if (combatMgr == null)
+            {
+                combatMgr = managerObj.AddComponent<CombatManager>();
+            }
+            combatMgr.EnsureDefaultBosses();
+            combatMgr.LoadBossAssetsInEditorIfNeeded();
 
             sessionMgr.EnsureDefaultOcaCatalog();
             sessionMgr.LoadAssetsInEditorIfNeeded();

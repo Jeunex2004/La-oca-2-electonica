@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Oca2.Board;
+using Oca2.Combat;
 using Oca2.Data;
 using Oca2.Players;
 
@@ -12,7 +13,7 @@ namespace Oca2.Core
     /// Gestor central de la sesión de juego de La Oca 2: Electric Boogaloo.
     /// Administra el catálogo de las 6 Ocas del documento TP2, las opciones de juego,
     /// la configuración de 1 a 8 jugadores, la transición entre SceneMenu y SampleScene,
-    /// la instanciación de fichas en la casilla START y el flujo básico de turnos.
+    /// la instanciación de fichas y de los 3 Bosses, el flujo de turnos y la resolución de combates.
     /// </summary>
     public class GameSessionManager : MonoBehaviour
     {
@@ -84,6 +85,11 @@ namespace Oca2.Core
             }
             Instance = this;
             DontDestroyOnLoad(gameObject);
+
+            if (GetComponent<CombatManager>() == null)
+            {
+                gameObject.AddComponent<CombatManager>();
+            }
 
             SceneManager.sceneLoaded += OnSceneLoaded;
 
@@ -345,6 +351,12 @@ namespace Oca2.Core
                 ? BoardManager.Instance
                 : FindAnyObjectByType<BoardManager>();
 
+            // Instanciar los 3 Bosses en las casillas 13 (La Foca), 31 (La Roca) y 52 (La Trollface)
+            if (CombatManager.Instance != null)
+            {
+                CombatManager.Instance.SpawnBossesOnBoard(boardMgr, options.enableBosses);
+            }
+
             BoardTile startTile = boardMgr != null ? boardMgr.GetTile(BoardType.MainBoard, 0) : null;
 
             int totalPlayers = configuredPlayers.Count;
@@ -357,6 +369,7 @@ namespace Oca2.Core
                 pData.currentExp = 0;
                 pData.mana = 0;
                 pData.isZombie = false;
+                pData.combatFlatBonus = 0;
 
                 OcaCharacterDefinition ocaDef = GetOcaDefinition(pData.selectedOca);
                 Sprite ocaSprite = ocaDef != null ? ocaDef.sprite : null;
@@ -402,11 +415,12 @@ namespace Oca2.Core
         }
 
         /// <summary>
-        /// Lanza el dado de movimiento (1d6) para el jugador en turno y aplica efectos básicos de casilla.
+        /// Lanza el dado de movimiento (1d6) para el jugador en turno y verifica intercepciones de Bosses y efectos de casilla.
         /// </summary>
         public void RollDiceForCurrentPlayer()
         {
             if (!isMatchActive || activeTokens.Count == 0) return;
+            if (CombatManager.Instance != null && CombatManager.Instance.IsInCombat) return;
 
             PlayerOcaToken currentToken = activeTokens[currentTurnPlayerIndex];
             if (currentToken == null || currentToken.IsMoving) return;
@@ -431,17 +445,47 @@ namespace Oca2.Core
                 targetIndex = Mathf.Min(currentToken.CurrentTileIndex + roll, path.TileCount - 1);
             }
 
+            // Regla TP2 (pág. 8-9): Si el jugador pasa por encima de una casilla con un Boss activo, debe detenerse y enfrentarse a él
+            BossDefinition interceptedBoss = null;
+            if (options.enableBosses && CombatManager.Instance != null)
+            {
+                interceptedBoss = CombatManager.Instance.GetBossInterceptOnPath(
+                    currentToken.CurrentBoard,
+                    currentToken.CurrentTileIndex,
+                    targetIndex
+                );
+
+                if (interceptedBoss != null)
+                {
+                    targetIndex = interceptedBoss.tileIndex;
+                }
+            }
+
             if (boardMgr.CameraController != null)
             {
                 boardMgr.CameraController.FocusOnTarget(currentToken.transform, 14f);
             }
 
             string playerName = currentToken.PlayerData.playerName;
-            OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, roll, $"{playerName} tiró un {roll} y avanza a la casilla {targetIndex}...");
+            string moveMsg = interceptedBoss != null
+                ? $"{playerName} tiró un {roll}, ¡pero el Boss {interceptedBoss.displayName} bloquea el paso en la casilla {targetIndex}!"
+                : $"{playerName} tiró un {roll} y avanza a la casilla {targetIndex}...";
+
+            OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, roll, moveMsg);
 
             currentToken.MoveAlongPath(path, targetIndex, currentTurnPlayerIndex, activeTokens.Count, () =>
             {
-                ResolveTileEffect(currentToken, boardMgr, roll);
+                if (interceptedBoss != null && CombatManager.Instance != null)
+                {
+                    CombatManager.Instance.StartBossCombat(currentToken, interceptedBoss, (encounter) =>
+                    {
+                        HandleCombatConcluded(encounter, boardMgr, roll);
+                    });
+                }
+                else
+                {
+                    ResolveTileEffect(currentToken, boardMgr, roll);
+                }
             });
         }
 
@@ -456,6 +500,7 @@ namespace Oca2.Core
 
             PlayerSetupData pData = token.PlayerData;
             bool extraTurn = false;
+            bool playerDiedOnTile = false;
             string effectMsg = $"{pData.playerName} cayó en {landedTile.TileName}.";
 
             switch (landedTile.Type)
@@ -498,7 +543,7 @@ namespace Oca2.Core
 
                 case TileType.Zombi:
                     pData.isZombie = true;
-                    effectMsg = $"¡{pData.playerName} se convirtió en ZOMBI! Ahora es inmortal ante las casillas de muerte.";
+                    effectMsg = $"¡{pData.playerName} se convirtió en ZOMBI! Ahora es inmortal ante las casillas de muerte y derrotas.";
                     break;
 
                 case TileType.Muerte:
@@ -508,14 +553,9 @@ namespace Oca2.Core
                     }
                     else
                     {
-                        BoardType nextHell = token.CurrentBoard == BoardType.MainBoard ? BoardType.Hell1 : BoardType.Hell2;
-                        BoardTile hellStart = boardMgr.GetTile(nextHell, 0);
-                        if (hellStart != null)
-                        {
-                            token.PlaceOnTileImmediate(hellStart, currentTurnPlayerIndex, activeTokens.Count);
-                            boardMgr.SwitchToBoard(nextHell);
-                        }
-                        effectMsg = $"¡{pData.playerName} cayó en la Calavera y fue enviado a {nextHell}!";
+                        playerDiedOnTile = true;
+                        string hellName = KillPlayerAndSendToHell(token, boardMgr);
+                        effectMsg = $"¡{pData.playerName} cayó en la Calavera y fue enviado a {hellName}!";
                     }
                     break;
 
@@ -523,6 +563,21 @@ namespace Oca2.Core
                     effectMsg = $"¡¡VICTORIA!! ¡{pData.playerName} cayó exactamente en la Casilla 63 y ganó La Oca 2!";
                     OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, effectMsg);
                     return;
+            }
+
+            // Verificar si después del efecto de casilla hay otro jugador en la misma posición para iniciar un Combate PvP
+            if (!playerDiedOnTile && CombatManager.Instance != null)
+            {
+                PlayerOcaToken opponent = CombatManager.Instance.GetPvPOpponentOnTile(token, activeTokens);
+                if (opponent != null)
+                {
+                    bool pendingExtraTurn = extraTurn;
+                    CombatManager.Instance.StartPvPCombat(token, opponent, (encounter) =>
+                    {
+                        HandleCombatConcluded(encounter, boardMgr, lastRoll, pendingExtraTurn && encounter.attackerWon);
+                    });
+                    return;
+                }
             }
 
             if (!extraTurn)
@@ -535,9 +590,88 @@ namespace Oca2.Core
             }
         }
 
-        private static void GainPlayerExperience(PlayerSetupData pData, int amount)
+        /// <summary>
+        /// Aplica las recompensas (+3 EXP al ganador) y castigos (muerte / envío al Infierno al perdedor)
+        /// al concluir un combate contra un Boss o contra otro jugador (TP2 pág. 17).
+        /// </summary>
+        private void HandleCombatConcluded(CombatEncounter encounter, BoardManager boardMgr, int lastRoll, bool grantExtraTurn = false)
         {
+            string summaryMsg;
+
+            if (encounter.isBossCombat)
+            {
+                PlayerOcaToken player = encounter.attackerToken;
+                BossDefinition boss = encounter.targetBoss;
+
+                if (encounter.attackerWon)
+                {
+                    GainPlayerExperience(player.PlayerData, 3); // +3 EXP al victorioso (pág. 17)
+                    summaryMsg = $"¡{player.PlayerData.playerName} venció a {boss.displayName} y obtuvo +3 EXP (Nivel {player.PlayerData.expLevel})!";
+                }
+                else
+                {
+                    if (player.PlayerData.isZombie)
+                    {
+                        summaryMsg = $"{player.PlayerData.playerName} perdió contra {boss.displayName}, ¡pero al ser Zombi no puede morir!";
+                    }
+                    else
+                    {
+                        string hellDest = KillPlayerAndSendToHell(player, boardMgr);
+                        summaryMsg = $"¡{player.PlayerData.playerName} fue derrotado por {boss.displayName} y enviado a {hellDest}!";
+                    }
+                    grantExtraTurn = false;
+                }
+            }
+            else
+            {
+                PlayerOcaToken winner = encounter.attackerWon ? encounter.attackerToken : encounter.defenderPlayerToken;
+                PlayerOcaToken loser = encounter.attackerWon ? encounter.defenderPlayerToken : encounter.attackerToken;
+
+                GainPlayerExperience(winner.PlayerData, 3); // +3 EXP al victorioso (pág. 17)
+
+                if (loser.PlayerData.isZombie)
+                {
+                    summaryMsg = $"¡{winner.PlayerData.playerName} venció a {loser.PlayerData.playerName} (+3 EXP)! Como {loser.PlayerData.playerName} es Zombi, no muere.";
+                }
+                else
+                {
+                    string hellDest = KillPlayerAndSendToHell(loser, boardMgr);
+                    summaryMsg = $"¡{winner.PlayerData.playerName} venció a {loser.PlayerData.playerName} (+3 EXP)! {loser.PlayerData.playerName} muere y va a {hellDest}.";
+                }
+            }
+
+            if (grantExtraTurn)
+            {
+                OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, summaryMsg + " ¡Conserva su tirada extra!");
+            }
+            else
+            {
+                AdvanceTurn(summaryMsg, lastRoll);
+            }
+        }
+
+        private string KillPlayerAndSendToHell(PlayerOcaToken victim, BoardManager boardMgr)
+        {
+            if (victim == null || boardMgr == null) return "Infierno";
+
+            BoardType targetHell = (victim.CurrentBoard == BoardType.MainBoard || victim.CurrentBoard == BoardType.ClownWheel)
+                ? BoardType.Hell1
+                : BoardType.Hell2;
+
+            BoardTile hellStart = boardMgr.GetTile(targetHell, 0);
+            if (hellStart != null)
+            {
+                victim.PlaceOnTileImmediate(hellStart, victim.PlayerData.playerIndex, activeTokens.Count);
+            }
+
+            return targetHell == BoardType.Hell1 ? "Infierno 1" : "Infierno 2";
+        }
+
+        public static void GainPlayerExperience(PlayerSetupData pData, int amount)
+        {
+            if (pData == null) return;
             pData.currentExp += amount;
+            // Según pág. 18 del TP2: Para subir del nivel N hace falta N de experiencia, hasta nivel 22 máximo
             while (pData.expLevel < 22 && pData.currentExp >= pData.expLevel)
             {
                 pData.currentExp -= pData.expLevel;
@@ -591,6 +725,11 @@ namespace Oca2.Core
         {
             isMatchActive = false;
             ClearActiveTokens();
+
+            if (CombatManager.Instance != null)
+            {
+                CombatManager.Instance.ClearBossTokens();
+            }
 
             if (scenePlaceholderToken != null)
             {

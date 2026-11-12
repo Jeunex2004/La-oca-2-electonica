@@ -6,6 +6,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 #endif
+using Oca2.Combat;
 using Oca2.Core;
 using Oca2.Data;
 using Oca2.Players;
@@ -61,6 +62,21 @@ namespace Oca2.UI
         private Text hudStatusText;
         private Text hudTurnHeaderText;
         private Button rollDiceButton;
+
+        // Elementos de la Ventana de Combate (PvE Bosses y PvP)
+        private GameObject combatModalPanel;
+        private Text combatHeaderTitleText;
+        private Image attackerPortraitImg;
+        private Text attackerNameText;
+        private Text attackerFormulaText;
+        private Text attackerRollResultText;
+        private Image defenderPortraitImg;
+        private Text defenderNameText;
+        private Text defenderFormulaText;
+        private Text defenderRollResultText;
+        private Text combatNarrationText;
+        private Button combatRollBtn;
+        private Button combatContinueBtn;
 
         // Colores del tema visual inspirados en el TP2 (pág. 5 y 24)
         private static readonly Color CreamButtonColor = new Color(0.96f, 0.93f, 0.79f, 1f);
@@ -129,6 +145,13 @@ namespace Oca2.UI
                 GameSessionManager.Instance.OnTurnStateUpdated += HandleTurnStateUpdated;
             }
 
+            if (CombatManager.Instance != null)
+            {
+                CombatManager.Instance.OnCombatStarted += HandleCombatStarted;
+                CombatManager.Instance.OnCombatRolled += HandleCombatRolled;
+                CombatManager.Instance.OnCombatEnded += HandleCombatEnded;
+            }
+
             ShowMainMenu();
         }
 
@@ -141,6 +164,13 @@ namespace Oca2.UI
                 GameSessionManager.Instance.OnMatchStarted -= HandleMatchStarted;
                 GameSessionManager.Instance.OnMatchEndedToMenu -= HandleMatchEndedToMenu;
                 GameSessionManager.Instance.OnTurnStateUpdated -= HandleTurnStateUpdated;
+            }
+
+            if (CombatManager.Instance != null)
+            {
+                CombatManager.Instance.OnCombatStarted -= HandleCombatStarted;
+                CombatManager.Instance.OnCombatRolled -= HandleCombatRolled;
+                CombatManager.Instance.OnCombatEnded -= HandleCombatEnded;
             }
         }
 
@@ -698,6 +728,108 @@ namespace Oca2.UI
                         ShowMainMenu();
                     }
                 });
+
+            BuildCombatModalPanel(inGameHudPanel.transform);
+        }
+
+        // ---------------------------------------------------------------------
+        // 6. VENTANA MODAL DE COMBATE (Bosses: La Foca, La Roca, La Trollface y PvP)
+        // ---------------------------------------------------------------------
+        private void BuildCombatModalPanel(Transform parent)
+        {
+            combatModalPanel = CreatePanel(parent, "Combat_ModalOverlay", new Color(0.03f, 0.02f, 0.02f, 0.82f));
+
+            GameObject arenaWindow = CreateBox(combatModalPanel.transform, "Combat_ArenaWindow", new Color(0.16f, 0.12f, 0.12f, 0.98f),
+                new Vector2(0.14f, 0.14f), new Vector2(0.86f, 0.86f));
+            AddOutline(arenaWindow, new Color(0.85f, 0.18f, 0.18f), 4f);
+
+            // Cabecera del combate
+            GameObject headerBar = CreateBox(arenaWindow.transform, "Header", new Color(0.55f, 0.08f, 0.08f, 1f),
+                new Vector2(0f, 0.86f), new Vector2(1f, 1f));
+            combatHeaderTitleText = CreateText(headerBar.transform, "Txt_CombatTitle", "¡ENCUENTRO DE COMBATE!", 36, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
+            AddShadow(combatHeaderTitleText.gameObject, Color.black, new Vector2(3f, -3f));
+
+            // Tarjeta Izquierda: Jugador Atacante
+            GameObject leftCard = CreateBox(arenaWindow.transform, "Attacker_Card", new Color(0.12f, 0.20f, 0.14f, 0.96f),
+                new Vector2(0.04f, 0.32f), new Vector2(0.43f, 0.83f));
+            AddOutline(leftCard, AccentGreenColor, 3f);
+
+            GameObject attPortraitBg = CreateBox(leftCard.transform, "Portrait_Bg", new Color(0.95f, 0.94f, 0.88f, 1f),
+                new Vector2(0.22f, 0.44f), new Vector2(0.78f, 0.94f));
+            AddOutline(attPortraitBg, DarkBorderColor, 2f);
+            GameObject attImgObj = CreateBox(attPortraitBg.transform, "Img", Color.white,
+                new Vector2(0.08f, 0.06f), new Vector2(0.92f, 0.94f));
+            attackerPortraitImg = attImgObj.GetComponent<Image>();
+            attackerPortraitImg.preserveAspect = true;
+
+            attackerNameText = CreateText(leftCard.transform, "Txt_AttName", "Jugador 1", 24, FontStyle.Bold,
+                Color.white, TextAnchor.MiddleCenter, new Vector2(0.05f, 0.30f), new Vector2(0.95f, 0.42f));
+
+            attackerFormulaText = CreateText(leftCard.transform, "Txt_AttFormula", "Fuerza de Combate: 1d6", 20, FontStyle.Bold,
+                new Color(0.75f, 0.95f, 0.75f), TextAnchor.MiddleCenter, new Vector2(0.05f, 0.18f), new Vector2(0.95f, 0.30f));
+
+            attackerRollResultText = CreateText(leftCard.transform, "Txt_AttRoll", "Tirada: —", 24, FontStyle.Bold,
+                new Color(1f, 0.90f, 0.35f), TextAnchor.MiddleCenter, new Vector2(0.05f, 0.03f), new Vector2(0.95f, 0.17f));
+
+            // Emblema central VS
+            Text vsText = CreateText(arenaWindow.transform, "Txt_VS", "VS", 58, FontStyle.BoldAndItalic,
+                TitleRedColor, TextAnchor.MiddleCenter, new Vector2(0.43f, 0.48f), new Vector2(0.57f, 0.70f));
+            AddShadow(vsText.gameObject, Color.black, new Vector2(3f, -3f));
+
+            // Tarjeta Derecha: Defensor (Boss u Oca Rival)
+            GameObject rightCard = CreateBox(arenaWindow.transform, "Defender_Card", new Color(0.24f, 0.12f, 0.12f, 0.96f),
+                new Vector2(0.57f, 0.32f), new Vector2(0.96f, 0.83f));
+            AddOutline(rightCard, TitleRedColor, 3f);
+
+            GameObject defPortraitBg = CreateBox(rightCard.transform, "Portrait_Bg", new Color(0.95f, 0.94f, 0.88f, 1f),
+                new Vector2(0.22f, 0.44f), new Vector2(0.78f, 0.94f));
+            AddOutline(defPortraitBg, DarkBorderColor, 2f);
+            GameObject defImgObj = CreateBox(defPortraitBg.transform, "Img", Color.white,
+                new Vector2(0.08f, 0.06f), new Vector2(0.92f, 0.94f));
+            defenderPortraitImg = defImgObj.GetComponent<Image>();
+            defenderPortraitImg.preserveAspect = true;
+
+            defenderNameText = CreateText(rightCard.transform, "Txt_DefName", "La Foca", 24, FontStyle.Bold,
+                Color.white, TextAnchor.MiddleCenter, new Vector2(0.05f, 0.30f), new Vector2(0.95f, 0.42f));
+
+            defenderFormulaText = CreateText(rightCard.transform, "Txt_DefFormula", "Fuerza de Combate: 1d8", 20, FontStyle.Bold,
+                new Color(1f, 0.75f, 0.75f), TextAnchor.MiddleCenter, new Vector2(0.05f, 0.18f), new Vector2(0.95f, 0.30f));
+
+            defenderRollResultText = CreateText(rightCard.transform, "Txt_DefRoll", "Tirada: —", 24, FontStyle.Bold,
+                new Color(1f, 0.90f, 0.35f), TextAnchor.MiddleCenter, new Vector2(0.05f, 0.03f), new Vector2(0.95f, 0.17f));
+
+            // Narración / Resultado del Combate
+            GameObject narrationBox = CreateBox(arenaWindow.transform, "Narration_Box", new Color(0.09f, 0.09f, 0.09f, 0.95f),
+                new Vector2(0.04f, 0.16f), new Vector2(0.96f, 0.30f));
+            AddOutline(narrationBox, DarkBorderColor, 2f);
+
+            combatNarrationText = CreateText(narrationBox.transform, "Txt_Narration",
+                "¡Lanza los dados de combate! El ganador recibe +3 de EXP y el perdedor muere.", 20, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleCenter, new Vector2(0.03f, 0.05f), new Vector2(0.97f, 0.95f));
+
+            // Botones de acción de combate
+            combatRollBtn = CreateStyledButton(arenaWindow.transform, "Btn_CombatRoll", "¡LANZAR DADOS DE COMBATE!",
+                new Vector2(0.16f, 0.03f), new Vector2(0.56f, 0.13f),
+                TitleRedColor, Color.white, 24, () =>
+                {
+                    if (CombatManager.Instance != null)
+                    {
+                        CombatManager.Instance.RollActiveCombat();
+                    }
+                });
+
+            combatContinueBtn = CreateStyledButton(arenaWindow.transform, "Btn_CombatContinue", "Continuar Partida",
+                new Vector2(0.60f, 0.03f), new Vector2(0.88f, 0.13f),
+                AccentGreenColor, Color.white, 24, () =>
+                {
+                    if (CombatManager.Instance != null)
+                    {
+                        CombatManager.Instance.ConcludeActiveCombat();
+                    }
+                });
+
+            combatModalPanel.SetActive(false);
         }
 
         // =====================================================================
@@ -912,7 +1044,101 @@ namespace Oca2.UI
 
         private void HandleMatchEndedToMenu()
         {
+            if (combatModalPanel != null) combatModalPanel.SetActive(false);
             ShowMainMenu();
+        }
+
+        private void HandleCombatStarted(CombatEncounter encounter)
+        {
+            if (combatModalPanel == null || encounter == null) return;
+
+            ShowInGameHUD();
+            combatModalPanel.SetActive(true);
+
+            if (rollDiceButton != null) rollDiceButton.interactable = false;
+
+            // Configurar datos del Atacante
+            PlayerSetupData attData = encounter.attackerToken.PlayerData;
+            OcaCharacterDefinition attOca = GameSessionManager.Instance != null
+                ? GameSessionManager.Instance.GetOcaDefinition(attData.selectedOca)
+                : null;
+
+            if (attackerPortraitImg != null && attOca != null) attackerPortraitImg.sprite = attOca.sprite;
+            if (attackerNameText != null) attackerNameText.text = $"{attData.playerName} (Nivel {attData.expLevel})";
+            if (attackerFormulaText != null) attackerFormulaText.text = $"Fuerza: {encounter.attackerFormula}";
+            if (attackerRollResultText != null) attackerRollResultText.text = "Tirada: ?";
+
+            // Configurar datos del Defensor (Boss o Jugador Rival)
+            if (encounter.isBossCombat && encounter.targetBoss != null)
+            {
+                BossDefinition boss = encounter.targetBoss;
+                if (combatHeaderTitleText != null)
+                    combatHeaderTitleText.text = $"¡COMBATE CONTRA BOSS: {boss.displayName.ToUpper()}!";
+                if (defenderPortraitImg != null)
+                    defenderPortraitImg.sprite = boss.sprite;
+                if (defenderNameText != null)
+                    defenderNameText.text = $"{boss.displayName} (Casilla {boss.tileIndex})";
+            }
+            else if (encounter.defenderPlayerToken != null)
+            {
+                PlayerSetupData defData = encounter.defenderPlayerToken.PlayerData;
+                OcaCharacterDefinition defOca = GameSessionManager.Instance != null
+                    ? GameSessionManager.Instance.GetOcaDefinition(defData.selectedOca)
+                    : null;
+
+                if (combatHeaderTitleText != null)
+                    combatHeaderTitleText.text = "¡DUELO ENTRE JUGADORES!";
+                if (defenderPortraitImg != null && defOca != null)
+                    defenderPortraitImg.sprite = defOca.sprite;
+                if (defenderNameText != null)
+                    defenderNameText.text = $"{defData.playerName} (Nivel {defData.expLevel})";
+            }
+
+            if (defenderFormulaText != null) defenderFormulaText.text = $"Fuerza: {encounter.defenderFormula}";
+            if (defenderRollResultText != null) defenderRollResultText.text = "Tirada: ?";
+            if (combatNarrationText != null) combatNarrationText.text = encounter.resultSummary;
+
+            if (combatRollBtn != null) combatRollBtn.interactable = true;
+            if (combatContinueBtn != null) combatContinueBtn.interactable = false;
+        }
+
+        private void HandleCombatRolled(CombatEncounter encounter)
+        {
+            if (encounter == null) return;
+
+            if (attackerRollResultText != null)
+            {
+                attackerRollResultText.text = "Tirada: " + CombatManager.FormatRolls(
+                    encounter.attackerRolls,
+                    encounter.attackerFormula.flatBonus,
+                    encounter.attackerTotal
+                );
+            }
+
+            if (defenderRollResultText != null)
+            {
+                defenderRollResultText.text = "Tirada: " + CombatManager.FormatRolls(
+                    encounter.defenderRolls,
+                    encounter.defenderFormula.flatBonus,
+                    encounter.defenderTotal
+                );
+            }
+
+            if (combatNarrationText != null)
+            {
+                combatNarrationText.text = encounter.resultSummary;
+            }
+
+            // Si hubo empate, permitir volver a tirar; si ya hay ganador, habilitar Continuar
+            if (combatRollBtn != null) combatRollBtn.interactable = encounter.isTie;
+            if (combatContinueBtn != null) combatContinueBtn.interactable = encounter.hasRolled && !encounter.isTie;
+        }
+
+        private void HandleCombatEnded(CombatEncounter encounter)
+        {
+            if (combatModalPanel != null) combatModalPanel.SetActive(false);
+            if (rollDiceButton != null) rollDiceButton.interactable = true;
+            RefreshInGameHudPlayers();
         }
 
         private void HandleTurnStateUpdated(int activePlayerIdx, int lastRoll, string message)
