@@ -169,6 +169,27 @@ Assets/Scripts/
 
 ---
 
+## Sistemas Implementados (Etapa 6 — Barra de Experiencia, Crecimiento 3D y Dado Físico con Vaso / Cubilete)
+
+### 16. Barra de Experiencia (`1..22`), Árbol Visual de 21 Nodos y Crecimiento 3D (`Assets/Scripts/Progression/SkillTreeAndAbilities.cs`, `Assets/Scripts/OCAS/PlayerOcaToken.cs`, `Assets/Scripts/UI/MainMenuUIController.cs`)
+- **Barras de Progreso de Experiencia en el HUD**:
+  - Cada tarjeta superior de jugador cuenta con su propia barra visual rellenable (`Nvl X/22 • EXP: actual/req`) e indicador de puntos de habilidad pendientes (`[+X Pto]`).
+  - La barra inferior muestra una franja dedicada a la **Experiencia y Crecimiento del Jugador en Turno** con sus fórmulas actuales (`Mov`, `Att`, `Oro/casilla`, `Maná/luna`, `Nodos: X/21` y `Tamaño Oca: X.XXx`).
+- **Pista de Niveles `1 a 22` y Árbol Visual de `21 Nodos Circulares` (`Skill Tree.png`)**:
+  - Pista numerada del `1` al `22` en la cabecera del modal iluminando los niveles alcanzados y el nivel actual.
+  - Los **21 nodos circulares** están dispuestos de abajo hacia arriba en las 4 ramas oficiales, incluyendo la **bifurcación superior independiente en Movimiento (`+1d6 Mov` izquierda / `+3 Mov` derecha)** y la **bifurcación en Combate tras la base `+1 Att`**.
+- **Crecimiento Físico 3D de la Ficha Oca (`PlayerOcaToken.UpdateGrowthVisuals`)**:
+  - La ficha 3D de la Oca escala progresivamente en el tablero desde `1.00x` (Nivel 1) hasta `1.52x` (Nivel 22) y reproduce una animación de impulso cada vez que sube de nivel.
+
+### 17. Dado(s) 3D con Física y Vaso / Cubilete Controlado con el Mouse (`Assets/Scripts/Dice/PhysicsDiceAndCupRoller.cs`)
+- **Vaso / Cubilete 3D Interactivo con el Ratón**:
+  - Al iniciar el turno de cada jugador aparece el **Vaso 3D** invertido sobre el tablero activo con los colores del jugador y la cantidad exacta de dados `d6` físicos que le corresponden (`1d6` base + mejoras del Árbol de Movimiento o `RedBull`).
+  - El jugador puede **mantener presionado el clic izquierdo del ratón sobre el vaso y mover el mouse** para sacudir físicamente los dados dentro de la cavidad del cubilete; al **soltar el clic izquierdo**, el vaso se vuelca y lanza los dados con física real (`Rigidbody`, `BoxCollider`, `PhysicsMaterial`) sobre la superficie del tablero.
+- **Lectura Física de la Cara Superior (`1..6`)**:
+  - Cada dado 3D cuenta con los puntos (`pips` 1 a 6) modelados en sus 6 caras (`+Y=1`, `-Y=6`, `+Z=2`, `-Z=5`, `+X=3`, `-X=4`). Cuando los dados se detienen sobre el tablero, se lee automáticamente la cara que apunta hacia arriba (`Vector3.up`), se suman los bonos de Movimiento y la Oca avanza esa cantidad de casillas.
+
+---
+
 ## Cómo Ejecutar y Configurar en Unity
 
 1. Abrir el proyecto en **Unity 6 (6000.x)**.

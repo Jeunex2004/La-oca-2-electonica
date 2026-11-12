@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using Oca2.Board;
 using Oca2.Data;
+using Oca2.Progression;
 
 namespace Oca2.Players
 {
@@ -23,6 +24,8 @@ namespace Oca2.Players
         [SerializeField] private SpriteRenderer ocaSpriteRenderer;
 
         private Coroutine moveCoroutine;
+        private Coroutine growthAnimCoroutine;
+        private int lastVisualizedLevel = 1;
 
         public PlayerSetupData PlayerData => playerData;
         public BoardType CurrentBoard { get => currentBoard; set => currentBoard = value; }
@@ -68,6 +71,59 @@ namespace Oca2.Players
                     ocaSpriteRenderer.transform.localScale = new Vector3(scale, scale, 1f);
                 }
             }
+
+            lastVisualizedLevel = setupData != null ? setupData.expLevel : 1;
+            UpdateGrowthVisuals(false);
+        }
+
+        /// <summary>
+        /// Actualiza el crecimiento físico 3D de la ficha de la Oca en el tablero según su nivel de Experiencia (1..22),
+        /// reproduciendo una animación de impulso ("level-up pop") cuando el jugador sube de nivel.
+        /// </summary>
+        public void UpdateGrowthVisuals(bool allowAnimation = true)
+        {
+            if (playerData == null) return;
+
+            float targetScale = SkillTreeAndAbilities.GetGrowthScaleMultiplier(playerData);
+            bool leveledUp = playerData.expLevel > lastVisualizedLevel;
+            lastVisualizedLevel = playerData.expLevel;
+
+            if (allowAnimation && leveledUp && gameObject.activeInHierarchy)
+            {
+                if (growthAnimCoroutine != null) StopCoroutine(growthAnimCoroutine);
+                growthAnimCoroutine = StartCoroutine(AnimateGrowthRoutine(targetScale));
+            }
+            else
+            {
+                transform.localScale = Vector3.one * targetScale;
+            }
+        }
+
+        private IEnumerator AnimateGrowthRoutine(float targetScale)
+        {
+            Vector3 startScale = transform.localScale;
+            Vector3 peakScale = Vector3.one * (targetScale * 1.24f);
+            Vector3 finalScale = Vector3.one * targetScale;
+
+            float halfDuration = 0.18f;
+            float t = 0f;
+            while (t < halfDuration)
+            {
+                t += Time.deltaTime;
+                transform.localScale = Vector3.Lerp(startScale, peakScale, Mathf.Clamp01(t / halfDuration));
+                yield return null;
+            }
+
+            t = 0f;
+            while (t < halfDuration)
+            {
+                t += Time.deltaTime;
+                transform.localScale = Vector3.Lerp(peakScale, finalScale, Mathf.Clamp01(t / halfDuration));
+                yield return null;
+            }
+
+            transform.localScale = finalScale;
+            growthAnimCoroutine = null;
         }
 
         private void BuildVisualHierarchyIfNeeded()

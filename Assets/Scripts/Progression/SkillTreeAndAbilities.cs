@@ -95,8 +95,105 @@ namespace Oca2.Progression
         }
 
         /// <summary>
-        /// Intenta gastar 1 punto de habilidad en una de las ramas del Árbol de Experiencia ("Skill Tree.png"),
-        /// respetando la regla de rellenar los nodos desde abajo hacia arriba.
+        /// Devuelve cuánta EXP se necesita para pasar del nivel actual al siguiente (Reglas pág. 27: Nivel N requiere N puntos de EXP; Nivel 22 es el máximo).
+        /// </summary>
+        public static int GetExpRequiredForNextLevel(int currentLevel)
+        {
+            if (currentLevel >= 22) return 0;
+            return Mathf.Max(1, currentLevel);
+        }
+
+        /// <summary>
+        /// Devuelve el progreso normalizado [0..1] de la barra de experiencia del jugador hacia su siguiente nivel.
+        /// </summary>
+        public static float GetExpProgressNormalized(PlayerSetupData pData)
+        {
+            if (pData == null) return 0f;
+            if (pData.expLevel >= 22) return 1f;
+            int req = GetExpRequiredForNextLevel(pData.expLevel);
+            return Mathf.Clamp01((float)pData.currentExp / req);
+        }
+
+        /// <summary>
+        /// Devuelve el texto formateado de la barra de experiencia (ej. "Nvl 3/22 • EXP: 1/3").
+        /// </summary>
+        public static string GetExpBarDisplayText(PlayerSetupData pData)
+        {
+            if (pData == null) return "Nvl 1/22 • EXP: 0/1";
+            if (pData.expLevel >= 22) return "Nvl 22/22 (MÁXIMO)";
+            int req = GetExpRequiredForNextLevel(pData.expLevel);
+            return $"Nvl {pData.expLevel}/22 • EXP: {pData.currentExp}/{req}";
+        }
+
+        /// <summary>
+        /// Devuelve el total de nodos desbloqueados en el Árbol de Habilidades (de un máximo de 21 círculos en "Skill Tree.png").
+        /// </summary>
+        public static int GetTotalUnlockedSkillNodes(PlayerSetupData pData)
+        {
+            if (pData == null) return 0;
+            int movBase = Mathf.Min(3, pData.movementBranchNodes);
+            int movTop = (pData.movementTopLeftUnlocked ? 1 : 0) + (pData.movementTopRightUnlocked ? 1 : 0);
+            if (movTop == 0 && pData.movementBranchNodes > 3) movTop = pData.movementBranchNodes - 3;
+            return movBase + movTop + pData.combatLeftBranchNodes + pData.combatRightBranchNodes + pData.wealthBranchNodes + pData.magicBranchNodes;
+        }
+
+        /// <summary>
+        /// Calcula el multiplicador de escala visual 3D (crecimiento físico de la Oca en el tablero según su nivel de EXP y nodos desbloqueados).
+        /// </summary>
+        public static float GetGrowthScaleMultiplier(PlayerSetupData pData)
+        {
+            if (pData == null) return 1f;
+            int lvl = Mathf.Clamp(pData.expLevel, 1, 22);
+            // Crece progresivamente desde 1.00x en Nivel 1 hasta 1.52x en Nivel 22
+            return 1.0f + (lvl - 1) * 0.025f;
+        }
+
+        /// <summary>
+        /// Devuelve un resumen compacto de las estadísticas actuales de crecimiento del jugador (Movimiento, Ataque, Monedas/casilla, Maná/luna).
+        /// </summary>
+        public static string GetPlayerGrowthSummary(PlayerSetupData pData)
+        {
+            if (pData == null) return "Mov: 1d6 | Att: 1d6 | Oro/casilla: 1 | Maná/luna: 1";
+            GetMovementRollParameters(pData, out int movD6, out int movFlat, out _, out _);
+            string movStr = movFlat > 0 ? $"{movD6}d6+{movFlat}" : $"{movD6}d6";
+            string attStr = GetCombatFormulaSummary(pData);
+            int coinsPerTile = GetCoinsPerMoneyTile(pData);
+            int manaPerMoon = GetManaPerFullMoon(pData);
+            return $"Mov: {movStr}  |  Att: {attStr}  |  Oro/casilla: +{coinsPerTile}  |  Maná/luna: +{manaPerMoon}";
+        }
+
+        /// <summary>
+        /// Devuelve la fórmula actual de combate del jugador como texto (ej. "2d6 + 1d8 + 3").
+        /// </summary>
+        public static string GetCombatFormulaSummary(PlayerSetupData pData)
+        {
+            int d6Count = 1;
+            int d8Count = 0;
+            int d10Count = 0;
+            int flatBonus = 0;
+
+            if (pData != null)
+            {
+                flatBonus += pData.combatFlatBonus;
+                if (pData.combatLeftBranchNodes >= 1) flatBonus += 1;
+                if (pData.combatLeftBranchNodes >= 2) d6Count += 1;
+                if (pData.combatLeftBranchNodes >= 3) d6Count += 1;
+
+                if (pData.combatRightBranchNodes >= 1) flatBonus += 2;
+                if (pData.combatRightBranchNodes >= 2) d8Count += 1;
+                if (pData.combatRightBranchNodes >= 3) d10Count += 1;
+            }
+
+            List<string> parts = new List<string> { $"{d6Count}d6" };
+            if (d8Count > 0) parts.Add($"{d8Count}d8");
+            if (d10Count > 0) parts.Add($"{d10Count}d10");
+            if (flatBonus > 0) parts.Add($"+{flatBonus}");
+            return string.Join("", parts);
+        }
+
+        /// <summary>
+        /// Intenta gastar 1 punto de habilidad en una de las ramas o bifurcaciones del Árbol de Experiencia ("Skill Tree.png"),
+        /// respetando la regla de rellenar los nodos desde abajo hacia arriba ("siempre y cuando no haya una casilla vacía debajo suya").
         /// </summary>
         public static bool TryUpgradeSkillBranch(PlayerSetupData pData, SkillBranchType branch, out string message)
         {
@@ -112,14 +209,67 @@ namespace Oca2.Progression
             switch (branch)
             {
                 case SkillBranchType.Movement:
-                    if (pData.movementBranchNodes >= 5)
+                    if (pData.movementBranchNodes < 3)
+                    {
+                        pData.movementBranchNodes++;
+                        pData.unspentSkillPoints--;
+                        message = $"¡Rama Movimiento mejorada ({GetMovementNodeRewardText(pData.movementBranchNodes)})!";
+                        return true;
+                    }
+                    else if (!pData.movementTopLeftUnlocked)
+                    {
+                        pData.movementTopLeftUnlocked = true;
+                        pData.movementBranchNodes = 3 + (pData.movementTopLeftUnlocked ? 1 : 0) + (pData.movementTopRightUnlocked ? 1 : 0);
+                        pData.unspentSkillPoints--;
+                        message = "¡Cima Izquierda de Movimiento desbloqueada (+1d6 Mov)!";
+                        return true;
+                    }
+                    else if (!pData.movementTopRightUnlocked)
+                    {
+                        pData.movementTopRightUnlocked = true;
+                        pData.movementBranchNodes = 3 + (pData.movementTopLeftUnlocked ? 1 : 0) + (pData.movementTopRightUnlocked ? 1 : 0);
+                        pData.unspentSkillPoints--;
+                        message = "¡Cima Derecha de Movimiento desbloqueada (+3 Mov)!";
+                        return true;
+                    }
+                    else
                     {
                         message = "La rama de Movimiento ya está al máximo (5/5).";
                         return false;
                     }
-                    pData.movementBranchNodes++;
+
+                case SkillBranchType.MovementTopLeft:
+                    if (pData.movementBranchNodes < 3)
+                    {
+                        message = "Primero debes desbloquear los 3 nodos inferiores de Movimiento (+1 Mov, +2 Mov y +1d6 Mov).";
+                        return false;
+                    }
+                    if (pData.movementTopLeftUnlocked)
+                    {
+                        message = "La cima izquierda de Movimiento (+1d6 Mov) ya está desbloqueada.";
+                        return false;
+                    }
+                    pData.movementTopLeftUnlocked = true;
+                    pData.movementBranchNodes = 3 + (pData.movementTopLeftUnlocked ? 1 : 0) + (pData.movementTopRightUnlocked ? 1 : 0);
                     pData.unspentSkillPoints--;
-                    message = $"¡Rama Movimiento mejorada a {pData.movementBranchNodes}/5 ({GetMovementNodeRewardText(pData.movementBranchNodes)})!";
+                    message = "¡Cima Izquierda de Movimiento desbloqueada (+1d6 Mov)!";
+                    return true;
+
+                case SkillBranchType.MovementTopRight:
+                    if (pData.movementBranchNodes < 3)
+                    {
+                        message = "Primero debes desbloquear los 3 nodos inferiores de Movimiento (+1 Mov, +2 Mov y +1d6 Mov).";
+                        return false;
+                    }
+                    if (pData.movementTopRightUnlocked)
+                    {
+                        message = "La cima derecha de Movimiento (+3 Mov) ya está desbloqueada.";
+                        return false;
+                    }
+                    pData.movementTopRightUnlocked = true;
+                    pData.movementBranchNodes = 3 + (pData.movementTopLeftUnlocked ? 1 : 0) + (pData.movementTopRightUnlocked ? 1 : 0);
+                    pData.unspentSkillPoints--;
+                    message = "¡Cima Derecha de Movimiento desbloqueada (+3 Mov)!";
                     return true;
 
                 case SkillBranchType.CombatLeft:
@@ -243,8 +393,13 @@ namespace Oca2.Progression
                 if (pData.movementBranchNodes >= 1) flatBonus += 1;
                 if (pData.movementBranchNodes >= 2) flatBonus += 2;
                 if (pData.movementBranchNodes >= 3) totalD6Count += 1;
-                if (pData.movementBranchNodes >= 4) totalD6Count += 1;
-                if (pData.movementBranchNodes >= 5) flatBonus += 3;
+
+                // Bifurcación superior de Movimiento en "Skill Tree.png": Cima Izq (+1d6 Mov) y Cima Der (+3 Mov)
+                bool hasTopLeft = pData.movementTopLeftUnlocked || (!pData.movementTopLeftUnlocked && !pData.movementTopRightUnlocked && pData.movementBranchNodes >= 4);
+                bool hasTopRight = pData.movementTopRightUnlocked || (!pData.movementTopLeftUnlocked && !pData.movementTopRightUnlocked && pData.movementBranchNodes >= 5);
+
+                if (hasTopLeft) totalD6Count += 1;
+                if (hasTopRight) flatBonus += 3;
 
                 totalD6Count += pData.tempMoveExtraD6;
                 flatBonus += pData.tempMoveFlatBonus;
@@ -258,6 +413,15 @@ namespace Oca2.Progression
         /// Ejecuta la tirada de movimiento del jugador aplicando el Árbol de Habilidades, RedBull, Botas, Lupa/Paso Ligero, Velocidad y Ralentizar.
         /// </summary>
         public static int RollPlayerMovement(PlayerSetupData pData, out string breakdown)
+        {
+            return ResolveMovementFromPhysicalRolls(pData, null, out breakdown);
+        }
+
+        /// <summary>
+        /// Calcula el movimiento final del jugador a partir de las caras obtenidas por los dados físicos 3D del Vaso/Cubilete
+        /// (o tirada aleatoria si physicalRolls es nulo), aplicando todos los bonos del Árbol, objetos y hechizos.
+        /// </summary>
+        public static int ResolveMovementFromPhysicalRolls(PlayerSetupData pData, List<int> physicalRolls, out string breakdown)
         {
             GetMovementRollParameters(pData, out int d6Count, out int flatBonus, out int minVal, out int maxVal);
 
@@ -274,7 +438,9 @@ namespace Oca2.Progression
                 int sumDice = 0;
                 for (int i = 0; i < d6Count; i++)
                 {
-                    int r = Random.Range(1, 7);
+                    int r = (physicalRolls != null && i < physicalRolls.Count)
+                        ? Mathf.Clamp(physicalRolls[i], 1, 6)
+                        : Random.Range(1, 7);
                     sumDice += r;
                     parts.Add(r.ToString());
                 }

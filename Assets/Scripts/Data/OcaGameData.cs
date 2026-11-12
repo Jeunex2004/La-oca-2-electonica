@@ -18,15 +18,17 @@ namespace Oca2.Data
     }
 
     /// <summary>
-    /// Las 4 ramas del Árbol de Habilidades por Experiencia ("Skill Tree.png" / Reglas pág. 27-28).
+    /// Las ramas y bifurcaciones del Árbol de Habilidades por Experiencia ("Skill Tree.png" / Reglas pág. 27-28).
     /// </summary>
     public enum SkillBranchType
     {
-        Movement = 0,       // Rama 1: +1 Mov, +2 Mov, +1d6 Mov, +1d6 Mov, +3 Mov (5 nodos)
-        CombatLeft = 1,     // Rama 2A: +1 Att (base), +1d6 Att, +1d6 Att (3 nodos)
-        CombatRight = 2,    // Rama 2B: +2 Att, +1d8 Att, +1d10 Att (3 nodos tras base)
-        Wealth = 3,         // Rama 3: +1 Moneda/casilla en nivel 2 y nivel 5 (5 nodos)
-        Magic = 4           // Rama 4: +1 Maná/luna en nivel 2 y nivel 5 (5 nodos)
+        Movement = 0,           // Rama 1 Base: +1 Mov, +2 Mov, +1d6 Mov (y bifurcación superior)
+        CombatLeft = 1,         // Rama 2A: +1 Att (base), +1d6 Att, +1d6 Att (3 nodos)
+        CombatRight = 2,        // Rama 2B: +2 Att, +1d8 Att, +1d10 Att (3 nodos tras base)
+        Wealth = 3,             // Rama 3: +1 Moneda/casilla en nivel 2 y nivel 5 (5 nodos)
+        Magic = 4,              // Rama 4: +1 Maná/luna en nivel 2 y nivel 5 (5 nodos)
+        MovementTopLeft = 5,    // Rama 1 Bifurcación Superior Izq: +1d6 Mov (requiere 3 nodos base de Mov)
+        MovementTopRight = 6    // Rama 1 Bifurcación Superior Der: +3 Mov (requiere 3 nodos base de Mov)
     }
 
     /// <summary>
@@ -107,7 +109,9 @@ namespace Oca2.Data
 
         // Árbol de Habilidades por Experiencia (Niveles 1 a 22 -> 21 puntos posibles)
         public int unspentSkillPoints = 0;
-        public int movementBranchNodes = 0;     // 0 a 5
+        public int movementBranchNodes = 0;     // 0 a 5 (0..3 base + 2 en la bifurcación superior)
+        public bool movementTopLeftUnlocked = false;  // Cima Izq de Movimiento (+1d6 Mov)
+        public bool movementTopRightUnlocked = false; // Cima Der de Movimiento (+3 Mov)
         public int combatLeftBranchNodes = 0;   // 0 a 3 (incluye nodo base +1 Att en nivel 1)
         public int combatRightBranchNodes = 0;  // 0 a 3 (requiere nodo base +1 Att)
         public int wealthBranchNodes = 0;       // 0 a 5 (+1 Mon/casilla en nodos 2 y 5)
@@ -154,6 +158,8 @@ namespace Oca2.Data
 
             unspentSkillPoints = Mathf.Max(0, initialLevel - 1);
             movementBranchNodes = 0;
+            movementTopLeftUnlocked = false;
+            movementTopRightUnlocked = false;
             combatLeftBranchNodes = 0;
             combatRightBranchNodes = 0;
             wealthBranchNodes = 0;

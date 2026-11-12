@@ -64,6 +64,9 @@ namespace Oca2.UI
         private Transform hudPlayersBar;
         private Text hudStatusText;
         private Text hudTurnHeaderText;
+        private RectTransform hudExpBarFillRt;
+        private Text hudExpBarText;
+        private Text hudGrowthStatsText;
         private Button rollDiceButton;
         private Text skillTreeBtnLabel;
         private Text bagSpellBtnLabel;
@@ -72,9 +75,15 @@ namespace Oca2.UI
         private GameObject skillTreeModalPanel;
         private Text skillTreeHeaderText;
         private Text skillTreePassiveText;
+        private RectTransform skillTreeExpBarFillRt;
+        private Text skillTreeExpBarText;
+        private readonly Image[] skillTreeLevelDots = new Image[22];
+        private readonly Text[] skillTreeLevelNumbers = new Text[22];
+        private readonly Image[] skillNodeCircles = new Image[21];
+        private readonly Text[] skillNodeTexts = new Text[21];
+        private readonly Button[] skillNodeButtons = new Button[21];
         private Text skillBranchMovText;
         private Text skillBranchCombLeftText;
-        private Text skillBranchCombRightText;
         private Text skillBranchWealthText;
         private Text skillBranchMagicText;
         private Text skillTreeFeedbackText;
@@ -728,20 +737,44 @@ namespace Oca2.UI
             hLayout.childForceExpandHeight = true;
             hudPlayersBar = topBar.transform;
 
-            // Barra inferior de estado y botones de acción de turno
-            GameObject bottomBar = CreateBox(inGameHudPanel.transform, "Bottom_ActionBar", new Color(0.08f, 0.11f, 0.08f, 0.90f),
-                new Vector2(0.01f, 0.015f), new Vector2(0.99f, 0.125f));
+            // Barra inferior de estado, Barra de Experiencia/Crecimiento y botones de acción de turno
+            GameObject bottomBar = CreateBox(inGameHudPanel.transform, "Bottom_ActionBar", new Color(0.08f, 0.11f, 0.08f, 0.94f),
+                new Vector2(0.01f, 0.012f), new Vector2(0.99f, 0.165f));
             AddOutline(bottomBar, DarkBorderColor, 2f);
 
-            hudTurnHeaderText = CreateText(bottomBar.transform, "Txt_TurnHeader", "Turno: Jugador 1", 20, FontStyle.Bold,
-                new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleLeft, new Vector2(0.015f, 0.52f), new Vector2(0.45f, 0.96f));
+            // Franja superior de la barra inferior: Barra Visual de Experiencia (1..22) y Resumen de Crecimiento del Jugador en Turno
+            GameObject expStrip = CreateBox(bottomBar.transform, "ActivePlayer_ExpAndGrowthStrip", new Color(0.05f, 0.08f, 0.05f, 0.95f),
+                new Vector2(0.01f, 0.62f), new Vector2(0.99f, 0.96f));
+            AddOutline(expStrip, new Color(0.25f, 0.55f, 0.30f, 0.8f), 1f);
 
-            hudStatusText = CreateText(bottomBar.transform, "Txt_Status", "Listo para tirar el dado (1d6).", 17, FontStyle.Normal,
-                Color.white, TextAnchor.MiddleLeft, new Vector2(0.015f, 0.05f), new Vector2(0.45f, 0.52f));
+            // Barra de progreso de EXP rellenable
+            GameObject expBarBg = CreateBox(expStrip.transform, "Hud_ExpBar_Bg", new Color(0.12f, 0.14f, 0.18f, 1f),
+                new Vector2(0.01f, 0.14f), new Vector2(0.38f, 0.86f));
+            AddOutline(expBarBg, new Color(0.30f, 0.72f, 0.95f), 1.5f);
 
-            rollDiceButton = CreateStyledButton(bottomBar.transform, "Btn_RollDice", "Tirar Dado",
-                new Vector2(0.46f, 0.12f), new Vector2(0.58f, 0.88f),
-                AccentGreenColor, Color.white, 20, () =>
+            GameObject expBarFill = CreateBox(expBarBg.transform, "Hud_ExpBar_Fill", new Color(0.20f, 0.68f, 0.92f, 0.95f),
+                new Vector2(0f, 0f), new Vector2(0f, 1f));
+            hudExpBarFillRt = expBarFill.GetComponent<RectTransform>();
+
+            hudExpBarText = CreateText(expBarBg.transform, "Hud_ExpBar_Text", "NIVEL 1 / 22  •  EXP: 0 / 1", 14, FontStyle.Bold,
+                Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
+            AddShadow(hudExpBarText.gameObject, Color.black, new Vector2(1f, -1f));
+
+            hudGrowthStatsText = CreateText(expStrip.transform, "Hud_GrowthStats_Text",
+                "Crecimiento: Mov 1d6 | Att 1d6 | Oro/casilla: +1 | Maná/luna: +1 | Nodos: 0/21 | Escala: 1.00x",
+                14, FontStyle.Bold, new Color(0.82f, 0.96f, 0.82f), TextAnchor.MiddleLeft,
+                new Vector2(0.395f, 0.05f), new Vector2(0.99f, 0.95f));
+
+            // Franja inferior: Turno, Estado y Botones
+            hudTurnHeaderText = CreateText(bottomBar.transform, "Txt_TurnHeader", "Turno: Jugador 1", 18, FontStyle.Bold,
+                new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleLeft, new Vector2(0.015f, 0.32f), new Vector2(0.45f, 0.60f));
+
+            hudStatusText = CreateText(bottomBar.transform, "Txt_Status", "Agarra el Vaso 3D con el ratón, agítalo y suéltalo para lanzar el dado.", 15, FontStyle.Normal,
+                Color.white, TextAnchor.MiddleLeft, new Vector2(0.015f, 0.04f), new Vector2(0.45f, 0.32f));
+
+            rollDiceButton = CreateStyledButton(bottomBar.transform, "Btn_RollDice", "Agitar Vaso",
+                new Vector2(0.46f, 0.08f), new Vector2(0.58f, 0.56f),
+                AccentGreenColor, Color.white, 19, () =>
                 {
                     if (GameSessionManager.Instance != null)
                     {
@@ -750,20 +783,20 @@ namespace Oca2.UI
                 });
 
             Button skillBtn = CreateStyledButton(bottomBar.transform, "Btn_SkillTree", "Árbol EXP",
-                new Vector2(0.59f, 0.12f), new Vector2(0.70f, 0.88f),
-                new Color(0.20f, 0.52f, 0.85f, 1f), Color.white, 18, OpenSkillTreeModal);
+                new Vector2(0.59f, 0.08f), new Vector2(0.70f, 0.56f),
+                new Color(0.20f, 0.52f, 0.85f, 1f), Color.white, 17, OpenSkillTreeModal);
             skillTreeBtnLabel = skillBtn.GetComponentInChildren<Text>();
 
             Button bagBtn = CreateStyledButton(bottomBar.transform, "Btn_BagAndSpell", "Mochila / Magia",
-                new Vector2(0.71f, 0.12f), new Vector2(0.83f, 0.88f),
-                new Color(0.58f, 0.28f, 0.82f, 1f), Color.white, 18, OpenBagAndMagicModal);
+                new Vector2(0.71f, 0.08f), new Vector2(0.83f, 0.56f),
+                new Color(0.58f, 0.28f, 0.82f, 1f), Color.white, 17, OpenBagAndMagicModal);
             bagSpellBtnLabel = bagBtn.GetComponentInChildren<Text>();
 
             CreateMockupMenuButton(bottomBar.transform, "Btn_InGameOptions", "Opciones",
-                new Vector2(0.84f, 0.12f), new Vector2(0.91f, 0.88f), ShowOptions);
+                new Vector2(0.84f, 0.08f), new Vector2(0.91f, 0.56f), ShowOptions);
 
             CreateMockupMenuButton(bottomBar.transform, "Btn_ReturnMenu", "Menú",
-                new Vector2(0.92f, 0.12f), new Vector2(0.99f, 0.88f), () =>
+                new Vector2(0.92f, 0.08f), new Vector2(0.99f, 0.56f), () =>
                 {
                     if (GameSessionManager.Instance != null)
                     {
@@ -782,63 +815,164 @@ namespace Oca2.UI
         }
 
         // ---------------------------------------------------------------------
-        // 5A. MODAL DEL ÁRBOL DE HABILIDADES ("Skill Tree.png", Niveles 1 a 22)
+        // 5A. MODAL DEL ÁRBOL DE HABILIDADES ("Skill Tree.png", Niveles 1 a 22 + 21 Nodos Circulares)
         // ---------------------------------------------------------------------
         private void BuildSkillTreeModalPanel(Transform parent)
         {
-            skillTreeModalPanel = CreatePanel(parent, "SkillTree_ModalOverlay", new Color(0.02f, 0.04f, 0.02f, 0.85f));
+            skillTreeModalPanel = CreatePanel(parent, "SkillTree_ModalOverlay", new Color(0.02f, 0.04f, 0.02f, 0.88f));
 
             GameObject window = CreateBox(skillTreeModalPanel.transform, "SkillTree_Window", CardBgColor,
-                new Vector2(0.14f, 0.12f), new Vector2(0.86f, 0.88f));
+                new Vector2(0.06f, 0.06f), new Vector2(0.94f, 0.94f));
             AddOutline(window, new Color(0.25f, 0.68f, 0.95f), 4f);
 
-            skillTreeHeaderText = CreateText(window.transform, "Header", "ÁRBOL DE HABILIDADES POR EXPERIENCIA (NIVEL 1/22)", 28, FontStyle.Bold,
-                CreamButtonColor, TextAnchor.MiddleCenter, new Vector2(0.04f, 0.88f), new Vector2(0.96f, 0.98f));
+            skillTreeHeaderText = CreateText(window.transform, "Header", "ÁRBOL DE EXPERIENCIA Y CRECIMIENTO (NIVEL 1/22)", 25, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleCenter, new Vector2(0.03f, 0.91f), new Vector2(0.97f, 0.985f));
 
-            skillTreePassiveText = CreateText(window.transform, "PassiveInfo", "Pasiva de Oca: —", 18, FontStyle.Italic,
-                new Color(0.75f, 0.95f, 0.75f), TextAnchor.MiddleCenter, new Vector2(0.04f, 0.80f), new Vector2(0.96f, 0.88f));
+            // 1) PISTA DE NIVELES 1 A 22 (idéntica a la barra superior de "Skill Tree.png")
+            GameObject trackBox = CreateBox(window.transform, "LevelTrack_1_To_22", new Color(0.09f, 0.12f, 0.09f, 0.98f),
+                new Vector2(0.03f, 0.80f), new Vector2(0.97f, 0.905f));
+            AddOutline(trackBox, DarkBorderColor, 2f);
 
-            CreateSkillBranchRow(window.transform, "Rama 1 — Movimiento (+1, +2, +1d6, +1d6, +3)", 0.66f,
-                out skillBranchMovText, () => UpgradeSkillBranchFromUI(SkillBranchType.Movement));
+            for (int lvl = 1; lvl <= 22; lvl++)
+            {
+                int idx = lvl - 1;
+                float xMin = 0.01f + idx * (0.98f / 22f);
+                float xMax = xMin + (0.98f / 22f) - 0.003f;
 
-            CreateSkillBranchRow(window.transform, "Rama 2A — Combate Dados d6 (+1 Att, +1d6 Att, +1d6 Att)", 0.54f,
-                out skillBranchCombLeftText, () => UpgradeSkillBranchFromUI(SkillBranchType.CombatLeft));
+                GameObject cell = CreateBox(trackBox.transform, $"LvlCell_{lvl}", new Color(0.15f, 0.18f, 0.15f, 1f),
+                    new Vector2(xMin, 0.08f), new Vector2(xMax, 0.92f));
+                AddOutline(cell, DarkBorderColor, 1f);
 
-            CreateSkillBranchRow(window.transform, "Rama 2B — Combate Pesado (+2 Att, +1d8 Att, +1d10 Att)", 0.42f,
-                out skillBranchCombRightText, () => UpgradeSkillBranchFromUI(SkillBranchType.CombatRight));
+                // Punto superior sobre cada número como en Skill Tree.png
+                GameObject dotObj = CreateBox(cell.transform, "Dot", new Color(0.3f, 0.3f, 0.3f, 1f),
+                    new Vector2(0.25f, 0.58f), new Vector2(0.75f, 0.90f));
+                skillTreeLevelDots[idx] = dotObj.GetComponent<Image>();
 
-            CreateSkillBranchRow(window.transform, "Rama 3 — Riqueza (Nodos 2 y 5: +1 Moneda por Casilla Dinero)", 0.30f,
-                out skillBranchWealthText, () => UpgradeSkillBranchFromUI(SkillBranchType.Wealth));
+                skillTreeLevelNumbers[idx] = CreateText(cell.transform, "Num", lvl.ToString(), 14, FontStyle.Bold,
+                    Color.white, TextAnchor.MiddleCenter, new Vector2(0f, 0.04f), new Vector2(1f, 0.56f));
+            }
 
-            CreateSkillBranchRow(window.transform, "Rama 4 — Magia (Nodos 2 y 5: +1 Maná por cada Luna Llena)", 0.18f,
-                out skillBranchMagicText, () => UpgradeSkillBranchFromUI(SkillBranchType.Magic));
+            // 2) BARRA DE PROGRESO DE EXPERIENCIA HACIA EL SIGUIENTE NIVEL + PASIVA DE OCA
+            GameObject expBarBg = CreateBox(window.transform, "Modal_ExpBar_Bg", new Color(0.10f, 0.13f, 0.18f, 1f),
+                new Vector2(0.03f, 0.73f), new Vector2(0.48f, 0.79f));
+            AddOutline(expBarBg, new Color(0.28f, 0.72f, 0.98f), 2f);
+
+            GameObject expBarFill = CreateBox(expBarBg.transform, "Modal_ExpBar_Fill", new Color(0.18f, 0.68f, 0.95f, 0.96f),
+                new Vector2(0f, 0f), new Vector2(0f, 1f));
+            skillTreeExpBarFillRt = expBarFill.GetComponent<RectTransform>();
+
+            skillTreeExpBarText = CreateText(expBarBg.transform, "Modal_ExpBar_Text", "EXP: 0 / 1 para subir a Nivel 2", 15, FontStyle.Bold,
+                Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
+            AddShadow(skillTreeExpBarText.gameObject, Color.black, new Vector2(1f, -1f));
+
+            skillTreePassiveText = CreateText(window.transform, "PassiveInfo", "Pasiva de Oca: —", 15, FontStyle.Bold,
+                new Color(0.78f, 0.96f, 0.78f), TextAnchor.MiddleRight, new Vector2(0.50f, 0.73f), new Vector2(0.97f, 0.79f));
+
+            // 3) LAS 4 COLUMNAS DEL ÁRBOL DE HABILIDADES CON SUS 21 NODOS CIRCULARES (abajo hacia arriba como en "Skill Tree.png")
+            // Columna 1: MOVIMIENTO (5 círculos: 3 base abajo->arriba + bifurcación en la cima: Izq +1d6 Mov / Der +3 Mov)
+            GameObject colMov = CreateSkillColumnBox(window.transform, "Col_Movement", "RAMA 1: MOVIMIENTO",
+                new Vector2(0.03f, 0.14f), new Vector2(0.255f, 0.715f), out skillBranchMovText);
+            CreateConnectingLine(colMov.transform, new Vector2(0.49f, 0.16f), new Vector2(0.51f, 0.62f));
+            CreateConnectingLine(colMov.transform, new Vector2(0.26f, 0.60f), new Vector2(0.74f, 0.62f));
+            CreateConnectingLine(colMov.transform, new Vector2(0.25f, 0.60f), new Vector2(0.27f, 0.76f));
+            CreateConnectingLine(colMov.transform, new Vector2(0.73f, 0.60f), new Vector2(0.75f, 0.76f));
+
+            CreateSkillNodeButton(colMov.transform, 0, "+1 Mov", new Vector2(0.22f, 0.06f), new Vector2(0.78f, 0.20f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.Movement));
+            CreateSkillNodeButton(colMov.transform, 1, "+2 Mov", new Vector2(0.22f, 0.26f), new Vector2(0.78f, 0.40f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.Movement));
+            CreateSkillNodeButton(colMov.transform, 2, "+1d6 Mov", new Vector2(0.22f, 0.46f), new Vector2(0.78f, 0.60f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.Movement));
+            CreateSkillNodeButton(colMov.transform, 3, "+1d6 Mov", new Vector2(0.04f, 0.68f), new Vector2(0.48f, 0.84f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.MovementTopLeft));
+            CreateSkillNodeButton(colMov.transform, 4, "+3 Mov", new Vector2(0.52f, 0.68f), new Vector2(0.96f, 0.84f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.MovementTopRight));
+
+            // Columna 2: COMBATE (6 círculos: Base +1 Att abajo -> Bifurcación Izq [+1d6, +1d6] y Der [+2, +1d8, +1d10])
+            GameObject colComb = CreateSkillColumnBox(window.transform, "Col_Combat", "RAMA 2: COMBATE",
+                new Vector2(0.268f, 0.14f), new Vector2(0.515f, 0.715f), out skillBranchCombLeftText);
+            CreateConnectingLine(colComb.transform, new Vector2(0.26f, 0.20f), new Vector2(0.74f, 0.22f));
+            CreateConnectingLine(colComb.transform, new Vector2(0.25f, 0.20f), new Vector2(0.27f, 0.62f));
+            CreateConnectingLine(colComb.transform, new Vector2(0.73f, 0.20f), new Vector2(0.75f, 0.76f));
+
+            CreateSkillNodeButton(colComb.transform, 5, "+1 Att\n(Base)", new Vector2(0.24f, 0.05f), new Vector2(0.76f, 0.20f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.CombatLeft));
+            CreateSkillNodeButton(colComb.transform, 6, "+1d6 Att", new Vector2(0.04f, 0.28f), new Vector2(0.48f, 0.43f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.CombatLeft));
+            CreateSkillNodeButton(colComb.transform, 7, "+1d6 Att", new Vector2(0.04f, 0.50f), new Vector2(0.48f, 0.65f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.CombatLeft));
+            CreateSkillNodeButton(colComb.transform, 8, "+2 Att", new Vector2(0.52f, 0.26f), new Vector2(0.96f, 0.40f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.CombatRight));
+            CreateSkillNodeButton(colComb.transform, 9, "+1d8 Att", new Vector2(0.52f, 0.47f), new Vector2(0.96f, 0.61f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.CombatRight));
+            CreateSkillNodeButton(colComb.transform, 10, "+1d10 Att", new Vector2(0.52f, 0.68f), new Vector2(0.96f, 0.84f),
+                () => UpgradeSkillBranchFromUI(SkillBranchType.CombatRight));
+
+            // Columna 3: RIQUEZA (5 círculos verticales abajo->arriba: Paso 1, +1 Mon/casilla, Paso 3, Paso 4, +1 Mon/casilla)
+            GameObject colWealth = CreateSkillColumnBox(window.transform, "Col_Wealth", "RAMA 3: RIQUEZA",
+                new Vector2(0.528f, 0.14f), new Vector2(0.742f, 0.715f), out skillBranchWealthText);
+            CreateConnectingLine(colWealth.transform, new Vector2(0.49f, 0.14f), new Vector2(0.51f, 0.78f));
+
+            string[] wealthLabels = { "Paso 1\n(○)", "+1 Moneda\n/ casilla", "Paso 3\n(○)", "Paso 4\n(○)", "+1 Moneda\n/ casilla" };
+            for (int n = 0; n < 5; n++)
+            {
+                float yMin = 0.05f + n * 0.16f;
+                CreateSkillNodeButton(colWealth.transform, 11 + n, wealthLabels[n],
+                    new Vector2(0.16f, yMin), new Vector2(0.84f, yMin + 0.14f),
+                    () => UpgradeSkillBranchFromUI(SkillBranchType.Wealth));
+            }
+
+            // Columna 4: MAGIA (5 círculos verticales abajo->arriba: Paso 1, +1 Maná/luna, Paso 3, Paso 4, +1 Maná/luna)
+            GameObject colMagic = CreateSkillColumnBox(window.transform, "Col_Magic", "RAMA 4: MAGIA LUNAR",
+                new Vector2(0.755f, 0.14f), new Vector2(0.97f, 0.715f), out skillBranchMagicText);
+            CreateConnectingLine(colMagic.transform, new Vector2(0.49f, 0.14f), new Vector2(0.51f, 0.78f));
+
+            string[] magicLabels = { "Paso 1\n(○)", "+1 Maná\n/ luna", "Paso 3\n(○)", "Paso 4\n(○)", "+1 Maná\n/ luna" };
+            for (int n = 0; n < 5; n++)
+            {
+                float yMin = 0.05f + n * 0.16f;
+                CreateSkillNodeButton(colMagic.transform, 16 + n, magicLabels[n],
+                    new Vector2(0.16f, yMin), new Vector2(0.84f, yMin + 0.14f),
+                    () => UpgradeSkillBranchFromUI(SkillBranchType.Magic));
+            }
 
             skillTreeFeedbackText = CreateText(window.transform, "Feedback",
-                "Sube de nivel en Casillas de EXP o ganando Combates (+3/+4 EXP) para obtener Puntos de Habilidad.",
-                18, FontStyle.Bold, new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleLeft,
-                new Vector2(0.05f, 0.04f), new Vector2(0.72f, 0.15f));
+                "Haz clic en cualquier nodo circular disponible (de abajo hacia arriba) para colocar tu ficha de habilidad.",
+                16, FontStyle.Bold, new Color(1f, 0.88f, 0.35f), TextAnchor.MiddleLeft,
+                new Vector2(0.03f, 0.03f), new Vector2(0.75f, 0.12f));
 
             CreateMockupMenuButton(window.transform, "Btn_CloseSkillTree", "Cerrar Árbol",
-                new Vector2(0.74f, 0.04f), new Vector2(0.95f, 0.15f), () => skillTreeModalPanel.SetActive(false));
+                new Vector2(0.77f, 0.03f), new Vector2(0.97f, 0.12f), () => skillTreeModalPanel.SetActive(false));
 
             skillTreeModalPanel.SetActive(false);
         }
 
-        private void CreateSkillBranchRow(Transform parent, string title, float yMin, out Text statusOut, UnityEngine.Events.UnityAction onUpgrade)
+        private GameObject CreateSkillColumnBox(Transform parent, string name, string title, Vector2 anchorMin, Vector2 anchorMax, out Text statusOut)
         {
-            GameObject row = CreateBox(parent, $"BranchRow_{yMin}", new Color(0.11f, 0.15f, 0.11f, 0.95f),
-                new Vector2(0.05f, yMin), new Vector2(0.95f, yMin + 0.105f));
-            AddOutline(row, DarkBorderColor, 2f);
+            GameObject col = CreateBox(parent, name, new Color(0.10f, 0.14f, 0.10f, 0.96f), anchorMin, anchorMax);
+            AddOutline(col, DarkBorderColor, 2f);
 
-            CreateText(row.transform, "Title", title, 19, FontStyle.Bold,
-                Color.white, TextAnchor.MiddleLeft, new Vector2(0.03f, 0.05f), new Vector2(0.56f, 0.95f));
+            CreateText(col.transform, "Title", title, 16, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleCenter, new Vector2(0.04f, 0.91f), new Vector2(0.96f, 0.99f));
 
-            statusOut = CreateText(row.transform, "Status", "0 / 5", 19, FontStyle.Bold,
-                new Color(1f, 0.90f, 0.35f), TextAnchor.MiddleCenter, new Vector2(0.57f, 0.05f), new Vector2(0.76f, 0.95f));
+            statusOut = CreateText(col.transform, "Status", "0 / 5", 13, FontStyle.Bold,
+                new Color(0.75f, 0.95f, 0.75f), TextAnchor.MiddleCenter, new Vector2(0.04f, 0.84f), new Vector2(0.96f, 0.91f));
 
-            CreateStyledButton(row.transform, "Btn_Upgrade", "+ Mejorar (1 Pto)",
-                new Vector2(0.78f, 0.14f), new Vector2(0.98f, 0.86f),
-                AccentGreenColor, Color.white, 17, onUpgrade);
+            return col;
+        }
+
+        private void CreateConnectingLine(Transform parent, Vector2 anchorMin, Vector2 anchorMax)
+        {
+            CreateBox(parent, "TreeLine", new Color(0.45f, 0.50f, 0.45f, 0.85f), anchorMin, anchorMax);
+        }
+
+        private void CreateSkillNodeButton(Transform parent, int nodeGlobalIdx, string label, Vector2 anchorMin, Vector2 anchorMax, UnityEngine.Events.UnityAction onClick)
+        {
+            Button btn = CreateStyledButton(parent, $"SkillNode_{nodeGlobalIdx}", label,
+                anchorMin, anchorMax, new Color(0.22f, 0.25f, 0.22f, 1f), Color.white, 13, onClick);
+            skillNodeCircles[nodeGlobalIdx] = btn.GetComponent<Image>();
+            skillNodeTexts[nodeGlobalIdx] = btn.GetComponentInChildren<Text>();
+            skillNodeButtons[nodeGlobalIdx] = btn;
         }
 
         // ---------------------------------------------------------------------
@@ -1320,10 +1454,54 @@ namespace Oca2.UI
             if (token == null) return;
 
             PlayerSetupData pData = token.PlayerData;
+            int totalUnlocked = SkillTreeAndAbilities.GetTotalUnlockedSkillNodes(pData);
+
             if (skillTreeHeaderText != null)
             {
                 skillTreeHeaderText.text =
-                    $"ÁRBOL DE HABILIDADES — {pData.playerName.ToUpper()}  |  NIVEL {pData.expLevel}/22 (EXP: {pData.currentExp}/{pData.expLevel})  |  PUNTOS: {pData.unspentSkillPoints}";
+                    $"ÁRBOL DE EXPERIENCIA Y CRECIMIENTO — {pData.playerName.ToUpper()}  |  NIVEL {pData.expLevel}/22  |  FIChas DISPONIBLES: {pData.unspentSkillPoints}  |  NODOS: {totalUnlocked}/21";
+            }
+
+            // 1) Actualizar la Pista de Niveles 1 a 22 ("Skill Tree.png")
+            for (int lvl = 1; lvl <= 22; lvl++)
+            {
+                int idx = lvl - 1;
+                bool isReached = lvl <= pData.expLevel;
+                bool isCurrent = lvl == pData.expLevel;
+
+                if (skillTreeLevelDots[idx] != null)
+                {
+                    skillTreeLevelDots[idx].color = isCurrent
+                        ? new Color(1f, 0.90f, 0.20f, 1f)
+                        : (isReached ? new Color(0.25f, 0.85f, 0.42f, 1f) : new Color(0.24f, 0.26f, 0.24f, 1f));
+                }
+
+                if (skillTreeLevelNumbers[idx] != null)
+                {
+                    skillTreeLevelNumbers[idx].color = isCurrent
+                        ? new Color(1f, 0.92f, 0.25f, 1f)
+                        : (isReached ? new Color(0.75f, 1f, 0.80f, 1f) : new Color(0.55f, 0.55f, 0.55f, 1f));
+                }
+            }
+
+            // 2) Actualizar Barra Visual de Progreso de EXP hacia el siguiente nivel
+            float normExp = SkillTreeAndAbilities.GetExpProgressNormalized(pData);
+            if (skillTreeExpBarFillRt != null)
+            {
+                skillTreeExpBarFillRt.anchorMax = new Vector2(Mathf.Clamp01(normExp), 1f);
+            }
+
+            if (skillTreeExpBarText != null)
+            {
+                if (pData.expLevel >= 22)
+                {
+                    skillTreeExpBarText.text = "¡NIVEL 22/22 ALCANZADO (EXPERIENCIA MÁXIMA)!";
+                }
+                else
+                {
+                    int req = SkillTreeAndAbilities.GetExpRequiredForNextLevel(pData.expLevel);
+                    skillTreeExpBarText.text = $"Nivel {pData.expLevel} -> {pData.expLevel + 1}  •  EXP: {pData.currentExp} / {req} ({Mathf.RoundToInt(normExp * 100)}%)";
+                }
             }
 
             if (skillTreePassiveText != null)
@@ -1331,16 +1509,107 @@ namespace Oca2.UI
                 skillTreePassiveText.text = SkillTreeAndAbilities.GetOcaPassiveDescription(pData.selectedOca);
             }
 
+            // 3) Actualizar estado de cabeceras de las 4 ramas
+            SkillTreeAndAbilities.GetMovementRollParameters(pData, out int movD6, out int movFlat, out _, out _);
+            string movFormula = movFlat > 0 ? $"{movD6}d6+{movFlat}" : $"{movD6}d6";
+            int movCount = Mathf.Min(3, pData.movementBranchNodes) + (pData.movementTopLeftUnlocked ? 1 : 0) + (pData.movementTopRightUnlocked ? 1 : 0);
+            if (movCount == 3 && pData.movementBranchNodes > 3) movCount = pData.movementBranchNodes;
+
             if (skillBranchMovText != null)
-                skillBranchMovText.text = $"{pData.movementBranchNodes} / 5 nodos";
+                skillBranchMovText.text = $"{movCount}/5 nodos  •  Actual: {movFormula}";
             if (skillBranchCombLeftText != null)
-                skillBranchCombLeftText.text = $"{pData.combatLeftBranchNodes} / 3 nodos";
-            if (skillBranchCombRightText != null)
-                skillBranchCombRightText.text = $"{pData.combatRightBranchNodes} / 3 nodos";
+                skillBranchCombLeftText.text = $"{pData.combatLeftBranchNodes + pData.combatRightBranchNodes}/6 nodos  •  Actual: {SkillTreeAndAbilities.GetCombatFormulaSummary(pData)}";
             if (skillBranchWealthText != null)
-                skillBranchWealthText.text = $"{pData.wealthBranchNodes} / 5 (+{SkillTreeAndAbilities.GetCoinsPerMoneyTile(pData)} Moneda/casilla)";
+                skillBranchWealthText.text = $"{pData.wealthBranchNodes}/5 nodos  •  +{SkillTreeAndAbilities.GetCoinsPerMoneyTile(pData)} Moneda/casilla";
             if (skillBranchMagicText != null)
-                skillBranchMagicText.text = $"{pData.magicBranchNodes} / 5 (+{SkillTreeAndAbilities.GetManaPerFullMoon(pData)} Maná/luna)";
+                skillBranchMagicText.text = $"{pData.magicBranchNodes}/5 nodos  •  +{SkillTreeAndAbilities.GetManaPerFullMoon(pData)} Maná/luna";
+
+            // 4) Actualizar el estado visual e interactividad de los 21 Nodos Circulares (de abajo hacia arriba)
+            bool hasPoints = pData.unspentSkillPoints > 0;
+            bool movTopLeft = pData.movementTopLeftUnlocked || (!pData.movementTopLeftUnlocked && !pData.movementTopRightUnlocked && pData.movementBranchNodes >= 4);
+            bool movTopRight = pData.movementTopRightUnlocked || (!pData.movementTopLeftUnlocked && !pData.movementTopRightUnlocked && pData.movementBranchNodes >= 5);
+
+            // Rama 1: Movimiento (Nodos 0..4)
+            UpdateSingleSkillNodeVisual(0, "+1 Mov", pData.movementBranchNodes >= 1, pData.movementBranchNodes == 0, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(1, "+2 Mov", pData.movementBranchNodes >= 2, pData.movementBranchNodes == 1, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(2, "+1d6 Mov", pData.movementBranchNodes >= 3, pData.movementBranchNodes == 2, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(3, "+1d6 Mov", movTopLeft, pData.movementBranchNodes >= 3 && !movTopLeft, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(4, "+3 Mov", movTopRight, pData.movementBranchNodes >= 3 && !movTopRight, hasPoints, pData.tokenColor);
+
+            // Rama 2: Combate (Nodo 5 base + Nodos 6..7 sub-rama Izq + Nodos 8..10 sub-rama Der)
+            UpdateSingleSkillNodeVisual(5, "+1 Att\n(Base)", pData.combatLeftBranchNodes >= 1, pData.combatLeftBranchNodes == 0, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(6, "+1d6 Att", pData.combatLeftBranchNodes >= 2, pData.combatLeftBranchNodes == 1, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(7, "+1d6 Att", pData.combatLeftBranchNodes >= 3, pData.combatLeftBranchNodes == 2, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(8, "+2 Att", pData.combatRightBranchNodes >= 1, pData.combatLeftBranchNodes >= 1 && pData.combatRightBranchNodes == 0, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(9, "+1d8 Att", pData.combatRightBranchNodes >= 2, pData.combatLeftBranchNodes >= 1 && pData.combatRightBranchNodes == 1, hasPoints, pData.tokenColor);
+            UpdateSingleSkillNodeVisual(10, "+1d10 Att", pData.combatRightBranchNodes >= 3, pData.combatLeftBranchNodes >= 1 && pData.combatRightBranchNodes == 2, hasPoints, pData.tokenColor);
+
+            // Rama 3: Riqueza (Nodos 11..15)
+            string[] wealthBaseLabels = { "Paso 1", "+1 Mon/cas.", "Paso 3", "Paso 4", "+1 Mon/cas." };
+            for (int n = 0; n < 5; n++)
+            {
+                UpdateSingleSkillNodeVisual(11 + n, wealthBaseLabels[n],
+                    pData.wealthBranchNodes >= (n + 1),
+                    pData.wealthBranchNodes == n,
+                    hasPoints,
+                    pData.tokenColor);
+            }
+
+            // Rama 4: Magia (Nodos 16..20)
+            string[] magicBaseLabels = { "Paso 1", "+1 Maná/luna", "Paso 3", "Paso 4", "+1 Maná/luna" };
+            for (int n = 0; n < 5; n++)
+            {
+                UpdateSingleSkillNodeVisual(16 + n, magicBaseLabels[n],
+                    pData.magicBranchNodes >= (n + 1),
+                    pData.magicBranchNodes == n,
+                    hasPoints,
+                    pData.tokenColor);
+            }
+        }
+
+        private void UpdateSingleSkillNodeVisual(int nodeIdx, string baseLabel, bool isUnlocked, bool isNextAvailable, bool playerHasSkillPoints, Color playerColor)
+        {
+            if (nodeIdx < 0 || nodeIdx >= skillNodeCircles.Length) return;
+
+            Image img = skillNodeCircles[nodeIdx];
+            Text txt = skillNodeTexts[nodeIdx];
+            Button btn = skillNodeButtons[nodeIdx];
+
+            if (isUnlocked)
+            {
+                if (img != null) img.color = Color.Lerp(playerColor, new Color(0.20f, 0.78f, 0.35f, 1f), 0.55f);
+                if (txt != null)
+                {
+                    txt.text = $"[✓] {baseLabel}";
+                    txt.color = Color.white;
+                }
+                if (btn != null) btn.interactable = false;
+            }
+            else if (isNextAvailable)
+            {
+                if (img != null)
+                {
+                    img.color = playerHasSkillPoints
+                        ? new Color(0.22f, 0.68f, 0.32f, 1f)
+                        : new Color(0.28f, 0.36f, 0.28f, 1f);
+                }
+                if (txt != null)
+                {
+                    txt.text = playerHasSkillPoints ? $"[+1 Pto] {baseLabel}" : $"[Sig.] {baseLabel}";
+                    txt.color = playerHasSkillPoints ? new Color(1f, 0.96f, 0.55f, 1f) : new Color(0.85f, 0.90f, 0.85f, 1f);
+                }
+                if (btn != null) btn.interactable = playerHasSkillPoints;
+            }
+            else
+            {
+                if (img != null) img.color = new Color(0.15f, 0.17f, 0.15f, 0.90f);
+                if (txt != null)
+                {
+                    txt.text = baseLabel;
+                    txt.color = new Color(0.55f, 0.58f, 0.55f, 1f);
+                }
+                if (btn != null) btn.interactable = false;
+            }
         }
 
         private void UpgradeSkillBranchFromUI(SkillBranchType branch)
@@ -1697,10 +1966,13 @@ namespace Oca2.UI
                     hudTurnHeaderText.text = $"Ronda {mgr.CurrentRound} [{moonStr}]  •  Turno: {pData.playerName} ({ocaTitle})";
                 }
 
+                // Actualizar Barra de Experiencia y Crecimiento en el HUD Inferior
+                UpdateHudActivePlayerExpAndGrowthBar(pData);
+
                 if (skillTreeBtnLabel != null)
                 {
                     skillTreeBtnLabel.text = pData.unspentSkillPoints > 0
-                        ? $"Árbol EXP ({pData.unspentSkillPoints}!)"
+                        ? $"Árbol EXP (+{pData.unspentSkillPoints}!)"
                         : $"Árbol EXP (Nvl {pData.expLevel})";
                 }
 
@@ -1716,6 +1988,31 @@ namespace Oca2.UI
             }
         }
 
+        private void UpdateHudActivePlayerExpAndGrowthBar(PlayerSetupData pData)
+        {
+            if (pData == null) return;
+
+            float normExp = SkillTreeAndAbilities.GetExpProgressNormalized(pData);
+            if (hudExpBarFillRt != null)
+            {
+                hudExpBarFillRt.anchorMax = new Vector2(Mathf.Clamp01(normExp), 1f);
+            }
+
+            if (hudExpBarText != null)
+            {
+                string ptsTag = pData.unspentSkillPoints > 0 ? $"  [¡+{pData.unspentSkillPoints} Pto(s)!]" : "";
+                hudExpBarText.text = $"{SkillTreeAndAbilities.GetExpBarDisplayText(pData)}{ptsTag}";
+            }
+
+            if (hudGrowthStatsText != null)
+            {
+                int unlocked = SkillTreeAndAbilities.GetTotalUnlockedSkillNodes(pData);
+                float growthScale = SkillTreeAndAbilities.GetGrowthScaleMultiplier(pData);
+                hudGrowthStatsText.text =
+                    $"Crecimiento: {SkillTreeAndAbilities.GetPlayerGrowthSummary(pData)}  |  Nodos: {unlocked}/21  |  Tamaño Oca: {growthScale:F2}x";
+            }
+        }
+
         private void RefreshInGameHudPlayers()
         {
             if (hudPlayersBar == null || GameSessionManager.Instance == null) return;
@@ -1727,6 +2024,11 @@ namespace Oca2.UI
 
             var tokens = GameSessionManager.Instance.ActiveTokens;
             int activeTurn = GameSessionManager.Instance.CurrentTurnPlayerIndex;
+
+            if (activeTurn >= 0 && activeTurn < tokens.Count && tokens[activeTurn] != null)
+            {
+                UpdateHudActivePlayerExpAndGrowthBar(tokens[activeTurn].PlayerData);
+            }
 
             for (int i = 0; i < tokens.Count; i++)
             {
@@ -1751,19 +2053,33 @@ namespace Oca2.UI
                 if (ocaDef != null) avatarImg.sprite = ocaDef.sprite;
                 avatarImg.preserveAspect = true;
 
-                // Nombre + Oca + Estado Zombi/Hechizo
+                // Nombre + Oca + Estado Zombi/Puntos de Habilidad
                 string ocaLabel = ocaDef != null ? ocaDef.displayName : pData.selectedOca.ToString();
                 string extraTag = pData.isZombie ? " [ZOMBI]" : "";
-                CreateText(badge.transform, "Txt_Name", $"{pData.playerName}{extraTag}\n<size=11>{ocaLabel}</size>",
-                    14, FontStyle.Bold, Color.white, TextAnchor.MiddleLeft,
-                    new Vector2(0.28f, 0.48f), new Vector2(0.98f, 0.96f));
+                if (pData.unspentSkillPoints > 0) extraTag += $" <color=#FFE045>[+{pData.unspentSkillPoints} Pto]</color>";
 
-                // Estadísticas: Monedas, EXP, Maná, Casilla
-                string spellShort = pData.currentSpell != SpellType.None ? $" | Hechizo: {pData.currentSpell}" : "";
-                string stats = $"Mon: {pData.coins} | EXP Nvl {pData.expLevel} | Maná: {pData.mana}\nCasilla: {token.CurrentTileIndex} ({token.CurrentBoard}){spellShort}";
+                CreateText(badge.transform, "Txt_Name", $"{pData.playerName}{extraTag}\n<size=11>{ocaLabel}</size>",
+                    13, FontStyle.Bold, Color.white, TextAnchor.MiddleLeft,
+                    new Vector2(0.28f, 0.60f), new Vector2(0.98f, 0.96f));
+
+                // Estadísticas: Monedas, Maná, Casilla
+                string spellShort = pData.currentSpell != SpellType.None ? $" | {pData.currentSpell}" : "";
+                string stats = $"Mon: {pData.coins} | Maná: {pData.mana} | Casilla: {token.CurrentTileIndex}{spellShort}";
                 CreateText(badge.transform, "Txt_Stats", stats,
-                    12, FontStyle.Normal, new Color(1f, 0.92f, 0.55f), TextAnchor.MiddleLeft,
-                    new Vector2(0.28f, 0.04f), new Vector2(0.98f, 0.48f));
+                    11, FontStyle.Normal, new Color(1f, 0.92f, 0.55f), TextAnchor.MiddleLeft,
+                    new Vector2(0.28f, 0.32f), new Vector2(0.98f, 0.60f));
+
+                // Barra Visual de Experiencia individual en cada tarjeta del HUD superior
+                GameObject expBg = CreateBox(badge.transform, "Card_ExpBar_Bg", new Color(0.08f, 0.10f, 0.14f, 1f),
+                    new Vector2(0.28f, 0.07f), new Vector2(0.96f, 0.30f));
+                AddOutline(expBg, new Color(0.25f, 0.65f, 0.90f, 0.8f), 1f);
+
+                float cardExpNorm = SkillTreeAndAbilities.GetExpProgressNormalized(pData);
+                CreateBox(expBg.transform, "Card_ExpBar_Fill", new Color(0.18f, 0.65f, 0.92f, 0.95f),
+                    new Vector2(0f, 0f), new Vector2(Mathf.Clamp01(cardExpNorm), 1f));
+
+                CreateText(expBg.transform, "Card_ExpBar_Txt", SkillTreeAndAbilities.GetExpBarDisplayText(pData),
+                    10, FontStyle.Bold, Color.white, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
             }
         }
 

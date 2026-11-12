@@ -116,6 +116,22 @@ namespace Oca2.Board
         }
 
         /// <summary>
+        /// Devuelve la posición mundial del centro del tablero indicado.
+        /// </summary>
+        public Vector3 GetBoardCenterPosition(BoardType boardType)
+        {
+            Transform targetCenter = boardType switch
+            {
+                BoardType.MainBoard => mainBoardCenter,
+                BoardType.Hell1 => hell1BoardCenter,
+                BoardType.Hell2 => hell2BoardCenter,
+                BoardType.ClownWheel => clownWheelBoardCenter,
+                _ => mainBoardCenter
+            };
+            return targetCenter != null ? targetCenter.position : new Vector3(31.2f, 0.4f, 0.4f);
+        }
+
+        /// <summary>
         /// Cambia la vista de la cámara al tablero especificado.
         /// </summary>
         public void SwitchToBoard(BoardType boardType)

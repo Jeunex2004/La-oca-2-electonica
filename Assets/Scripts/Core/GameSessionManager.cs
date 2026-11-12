@@ -6,6 +6,7 @@ using Oca2.Board;
 using Oca2.CardsAndMagic;
 using Oca2.Combat;
 using Oca2.Data;
+using Oca2.Dice;
 using Oca2.Items;
 using Oca2.Players;
 using Oca2.Progression;
@@ -38,6 +39,8 @@ namespace Oca2.Core
         [SerializeField] private Texture2D expTexture;
         [SerializeField] private Sprite manaIcon;
         [SerializeField] private Texture2D manaTexture;
+        [SerializeField] private Sprite skillTreeSprite;
+        [SerializeField] private Texture2D skillTreeTexture;
 
         [Header("Configuración Actual")]
         [SerializeField] private GameOptionsData options = new GameOptionsData();
@@ -71,6 +74,7 @@ namespace Oca2.Core
         public Sprite CoinIcon => GetOrCreateSprite(ref coinIcon, coinTexture);
         public Sprite ExpIcon => GetOrCreateSprite(ref expIcon, expTexture);
         public Sprite ManaIcon => GetOrCreateSprite(ref manaIcon, manaTexture);
+        public Sprite SkillTreeSprite => GetOrCreateSprite(ref skillTreeSprite, skillTreeTexture);
 
         public event Action OnMatchStarted;
         public event Action OnMatchEndedToMenu;
@@ -103,6 +107,10 @@ namespace Oca2.Core
             if (GetComponent<CombatManager>() == null)
             {
                 gameObject.AddComponent<CombatManager>();
+            }
+            if (GetComponent<PhysicsDiceAndCupRoller>() == null)
+            {
+                gameObject.AddComponent<PhysicsDiceAndCupRoller>();
             }
 
             SceneManager.sceneLoaded += OnSceneLoaded;
@@ -255,6 +263,7 @@ namespace Oca2.Core
             if (coinTexture == null) coinTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(folder + "Moneda.png");
             if (expTexture == null) expTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(folder + "EXP.png");
             if (manaTexture == null) manaTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(folder + "Mana.png");
+            if (skillTreeTexture == null) skillTreeTexture = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(folder + "Skill Tree.png");
         }
 #endif
 
@@ -432,17 +441,44 @@ namespace Oca2.Core
             if (boardMgr != null)
             {
                 boardMgr.SwitchToBoard(BoardType.MainBoard);
-                if (activeTokens.Count > 0 && boardMgr.CameraController != null)
-                {
-                    boardMgr.CameraController.FocusOnTarget(activeTokens[0].transform, 15f);
-                }
             }
 
             OnMatchStarted?.Invoke();
+            PrepareTurnCupAndPhysicsDiceForCurrentPlayer();
             OnTurnStateUpdated?.Invoke(
                 currentTurnPlayerIndex,
                 0,
-                $"¡Partida iniciada! Cada Oca activó su habilidad pasiva inicial."
+                $"¡Partida iniciada! Agarra el Vaso 3D con el ratón, agítalo y suéltalo para lanzar el dado."
+            );
+        }
+
+        /// <summary>
+        /// Coloca el Vaso / Cubilete 3D con la cantidad exacta de dados d6 físicos del jugador en turno sobre el tablero activo.
+        /// </summary>
+        public void PrepareTurnCupAndPhysicsDiceForCurrentPlayer()
+        {
+            if (!isMatchActive || activeTokens.Count == 0 || PhysicsDiceAndCupRoller.Instance == null)
+                return;
+
+            PlayerOcaToken currentToken = GetCurrentTurnToken();
+            if (currentToken == null || currentToken.IsMoving) return;
+
+            BoardManager boardMgr = BoardManager.Instance != null
+                ? BoardManager.Instance
+                : FindAnyObjectByType<BoardManager>();
+            Vector3 boardCenter = boardMgr != null
+                ? boardMgr.GetBoardCenterPosition(currentToken.CurrentBoard)
+                : new Vector3(31.2f, 0.4f, 0.4f);
+
+            PlayerSetupData pData = currentToken.PlayerData;
+            SkillTreeAndAbilities.GetMovementRollParameters(pData, out int d6Count, out _, out _, out _);
+
+            PhysicsDiceAndCupRoller.Instance.PrepareCupAndDiceOnBoard(
+                boardCenter,
+                d6Count,
+                pData.tokenColor,
+                ExecuteMovementFromPhysicalDice,
+                (statusPrompt) => OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, 0, statusPrompt)
             );
         }
 
@@ -459,6 +495,11 @@ namespace Oca2.Core
             bool ok = SkillTreeAndAbilities.TryUpgradeSkillBranch(token.PlayerData, branch, out message);
             if (ok)
             {
+                token.UpdateGrowthVisuals(true);
+                if (PhysicsDiceAndCupRoller.Instance != null && PhysicsDiceAndCupRoller.Instance.IsCupReadyToGrab)
+                {
+                    PrepareTurnCupAndPhysicsDiceForCurrentPlayer();
+                }
                 OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, 0, message);
             }
             return ok;
@@ -473,6 +514,7 @@ namespace Oca2.Core
             bool ok = ShopAndItemsSystem.TryBuyItem(token.PlayerData, itemType, currentShopLandedExactly, out message);
             if (ok)
             {
+                token.UpdateGrowthVisuals(true);
                 OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, 0, message);
             }
             return ok;
@@ -504,6 +546,11 @@ namespace Oca2.Core
 
             if (ok)
             {
+                userToken.UpdateGrowthVisuals(true);
+                if (PhysicsDiceAndCupRoller.Instance != null && PhysicsDiceAndCupRoller.Instance.IsCupReadyToGrab)
+                {
+                    PrepareTurnCupAndPhysicsDiceForCurrentPlayer();
+                }
                 OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, 0, message);
             }
             return ok;
@@ -552,6 +599,7 @@ namespace Oca2.Core
         {
             if (!isMatchActive || activeTokens.Count == 0) return;
             if (CombatManager.Instance != null && CombatManager.Instance.IsInCombat) return;
+            if (PhysicsDiceAndCupRoller.Instance != null && PhysicsDiceAndCupRoller.Instance.IsRollingInProgress) return;
 
             PlayerOcaToken currentToken = activeTokens[currentTurnPlayerIndex];
             if (currentToken == null || currentToken.IsMoving) return;
@@ -559,6 +607,42 @@ namespace Oca2.Core
             PlayerSetupData pData = currentToken.PlayerData;
 
             // Verificar si tiene el turno congelado / saltado (Hechizo Congelar o Carta Salvaje)
+            if (pData.skipNextTurn)
+            {
+                pData.skipNextTurn = false;
+                if (PhysicsDiceAndCupRoller.Instance != null) PhysicsDiceAndCupRoller.Instance.HideCupAndDice();
+                AdvanceTurn($"¡{pData.playerName} tenía el turno congelado y pierde este turno!", 0);
+                return;
+            }
+
+            // Si tiene pasos fijos elegidos con Lupa o Paso Ligero, avanzar directamente sin tirar el vaso
+            if (pData.forcedNextMoveRoll > 0)
+            {
+                if (PhysicsDiceAndCupRoller.Instance != null) PhysicsDiceAndCupRoller.Instance.HideCupAndDice();
+                ExecuteMovementFromPhysicalDice(null);
+                return;
+            }
+
+            if (PhysicsDiceAndCupRoller.Instance != null)
+            {
+                if (!PhysicsDiceAndCupRoller.Instance.IsCupReadyToGrab)
+                {
+                    PrepareTurnCupAndPhysicsDiceForCurrentPlayer();
+                }
+                PhysicsDiceAndCupRoller.Instance.TriggerAutoShakeAndThrow();
+                return;
+            }
+
+            ExecuteMovementFromPhysicalDice(null);
+        }
+
+        private void ExecuteMovementFromPhysicalDice(List<int> physicalRolls)
+        {
+            if (!isMatchActive || activeTokens.Count == 0) return;
+            PlayerOcaToken currentToken = activeTokens[currentTurnPlayerIndex];
+            if (currentToken == null || currentToken.IsMoving) return;
+
+            PlayerSetupData pData = currentToken.PlayerData;
             if (pData.skipNextTurn)
             {
                 pData.skipNextTurn = false;
@@ -574,8 +658,8 @@ namespace Oca2.Core
             BoardPath path = boardMgr.GetPath(currentToken.CurrentBoard);
             if (path == null) return;
 
-            // Tirar dados de movimiento según Árbol de Habilidades + RedBull + Botas + Lupa/Paso Ligero + Velocidad/Ralentizar
-            int roll = SkillTreeAndAbilities.RollPlayerMovement(pData, out string rollBreakdown);
+            // Calcular movimiento final usando las caras de los dados físicos 3D + Árbol de Habilidades + Objetos + Hechizos
+            int roll = SkillTreeAndAbilities.ResolveMovementFromPhysicalRolls(pData, physicalRolls, out string rollBreakdown);
 
             List<BoardTile> stepSequence = path.TraceStepSequence(
                 currentToken.CurrentTileIndex,
@@ -781,8 +865,9 @@ namespace Oca2.Core
 
                 case TileType.Experiencia:
                     int lvlsGained = SkillTreeAndAbilities.GainExperienceAndGrantPoints(pData, 1);
-                    effectMsg = $"¡{pData.playerName} cayó en Casilla de Experiencia ({landedTile.TileNumber}) y ganó +1 EXP! (Nivel {pData.expLevel})" +
-                                (lvlsGained > 0 ? $" ¡+{lvlsGained} Punto de Habilidad disponible!" : "");
+                    token.UpdateGrowthVisuals(true);
+                    effectMsg = $"¡{pData.playerName} cayó en Casilla de Experiencia ({landedTile.TileNumber}) y ganó +1 EXP! ({SkillTreeAndAbilities.GetExpBarDisplayText(pData)})" +
+                                (lvlsGained > 0 ? $" ¡SUBIÓ DE NIVEL (+{lvlsGained} Pto de Habilidad)!" : "");
                     break;
 
                 case TileType.Tienda:
@@ -938,6 +1023,7 @@ namespace Oca2.Core
             }
             else
             {
+                PrepareTurnCupAndPhysicsDiceForCurrentPlayer();
                 OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, effectMsg);
             }
         }
@@ -994,7 +1080,8 @@ namespace Oca2.Core
 
                 case WildCardEffectType.TouchGrassGainExp:
                     SkillTreeAndAbilities.GainExperienceAndGrantPoints(pData, 1);
-                    return $"¡Saliste a tocar hierba y ganaste +1 de Experiencia (Nivel {pData.expLevel})!";
+                    token.UpdateGrowthVisuals(true);
+                    return $"¡Saliste a tocar hierba y ganaste +1 de Experiencia ({SkillTreeAndAbilities.GetExpBarDisplayText(pData)})!";
 
                 case WildCardEffectType.TellAJokeOrStart:
                     if (UnityEngine.Random.value >= 0.35f)
@@ -1197,7 +1284,8 @@ namespace Oca2.Core
                 {
                     int expGain = player.PlayerData.selectedOca == OcaType.ElXoca ? 4 : 3;
                     SkillTreeAndAbilities.GainExperienceAndGrantPoints(player.PlayerData, expGain);
-                    summaryMsg = $"¡{player.PlayerData.playerName} venció a {boss.displayName} y obtuvo +{expGain} EXP (Nivel {player.PlayerData.expLevel})!";
+                    player.UpdateGrowthVisuals(true);
+                    summaryMsg = $"¡{player.PlayerData.playerName} venció a {boss.displayName} y obtuvo +{expGain} EXP ({SkillTreeAndAbilities.GetExpBarDisplayText(player.PlayerData)})!";
                 }
                 else
                 {
@@ -1221,6 +1309,7 @@ namespace Oca2.Core
 
                 int expGain = winner.PlayerData.selectedOca == OcaType.ElXoca ? 4 : 3;
                 SkillTreeAndAbilities.GainExperienceAndGrantPoints(winner.PlayerData, expGain);
+                winner.UpdateGrowthVisuals(true);
                 RewardJinxBeneficiaryIfAny(loser.PlayerData);
 
                 if (loser.PlayerData.isZombie)
@@ -1241,6 +1330,7 @@ namespace Oca2.Core
 
             if (grantExtraTurn)
             {
+                PrepareTurnCupAndPhysicsDiceForCurrentPlayer();
                 OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, summaryMsg + " ¡Conserva su tirada extra!");
             }
             else
@@ -1301,22 +1391,23 @@ namespace Oca2.Core
             if (boardMgr != null && nextToken != null)
             {
                 boardMgr.SwitchToBoard(nextToken.CurrentBoard);
-                if (boardMgr.CameraController != null)
-                {
-                    boardMgr.CameraController.FocusOnTarget(nextToken.transform, 15f);
-                }
             }
 
             string turnNotice = string.IsNullOrEmpty(previousMessage)
-                ? $"Turno de {nextToken.PlayerData.playerName}"
+                ? $"Turno de {nextToken.PlayerData.playerName} (Agarra el Vaso 3D con el ratón para lanzar)"
                 : $"{previousMessage} | Turno de {nextToken.PlayerData.playerName}";
 
+            PrepareTurnCupAndPhysicsDiceForCurrentPlayer();
             OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, turnNotice);
         }
 
         public void ReturnToMainMenu()
         {
             isMatchActive = false;
+            if (PhysicsDiceAndCupRoller.Instance != null)
+            {
+                PhysicsDiceAndCupRoller.Instance.HideCupAndDice();
+            }
             ClearActiveTokens();
 
             if (CombatManager.Instance != null)
