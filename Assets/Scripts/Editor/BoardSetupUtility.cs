@@ -90,6 +90,15 @@ namespace Oca2.Editor
 
             SerializedObject soCam = new SerializedObject(camController);
             soCam.FindProperty("boardCenter").objectReferenceValue = mainBoardObj.transform;
+            SerializedProperty centersProp = soCam.FindProperty("allBoardCenters");
+            if (centersProp != null && centersProp.isArray)
+            {
+                centersProp.arraySize = 4;
+                centersProp.GetArrayElementAtIndex(0).objectReferenceValue = mainBoardObj.transform;
+                centersProp.GetArrayElementAtIndex(1).objectReferenceValue = hell1Obj.transform;
+                centersProp.GetArrayElementAtIndex(2).objectReferenceValue = hell2Obj.transform;
+                centersProp.GetArrayElementAtIndex(3).objectReferenceValue = clownObj.transform;
+            }
             soCam.ApplyModifiedProperties();
 
             soManager.FindProperty("cameraController").objectReferenceValue = camController;
@@ -98,8 +107,11 @@ namespace Oca2.Editor
             // 8. Iluminación sugerida
             SetupLighting(worldRoot.transform);
 
+            // 9. Configurar Menú Principal, Opciones y Selección de Jugadores
+            MenuSetupUtility.SetupMenuAndPlayerSelection();
+
             AssetDatabase.SaveAssets();
-            Debug.Log("[BoardSetupUtility] ¡Mundo 3D y Sistema de Cámara configurados exitosamente!");
+            Debug.Log("[BoardSetupUtility] ¡Mundo 3D, Sistema de Cámara y Menú Principal configurados exitosamente!");
         }
 
         private static Material GetOrCreateBoardMaterial(string matName, string texturePath)

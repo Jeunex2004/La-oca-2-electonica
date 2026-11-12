@@ -83,6 +83,14 @@ namespace Oca2.Cameras
 
         private void Update()
         {
+            if (Oca2.Core.GameSessionManager.Instance != null && !Oca2.Core.GameSessionManager.Instance.IsMatchActive)
+            {
+                // Mientras se está en el Menú Principal / Selección de Jugador, girar suavemente alrededor del tablero
+                targetYaw += 6f * Time.deltaTime;
+                UpdateCameraTransform();
+                return;
+            }
+
             HandleInputs();
             UpdateCameraTransform();
         }
@@ -177,7 +185,10 @@ namespace Oca2.Cameras
                 Quaternion horizontalRotation = Quaternion.Euler(0, currentYaw, 0);
                 Vector3 moveDir = horizontalRotation * new Vector3(panX, 0, panZ).normalized;
 
-                targetPivot += moveDir * (panSpeed * Time.deltaTime);
+                float speedMult = (Oca2.Core.GameSessionManager.Instance != null)
+                    ? Oca2.Core.GameSessionManager.Instance.Options.cameraSpeedMultiplier
+                    : 1f;
+                targetPivot += moveDir * (panSpeed * speedMult * Time.deltaTime);
 
                 // Limitar el paneo dentro de los límites del tablero
                 Vector3 center = boardCenter != null ? boardCenter.position : Vector3.zero;
