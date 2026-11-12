@@ -50,10 +50,10 @@ namespace Oca2.Combat
         }
 
         /// <summary>
-        /// Registra los 3 Bosses oficiales del documento TP2 con sus casillas y dados de fuerza exactos:
+        /// Registra los 3 Bosses oficiales del documento TP2 y del Tablero Principal ("Tablero principal.png"):
         /// - La Foca (Casilla 13): 1d8
-        /// - La Roca (Casilla 31): 2d6
-        /// - La Trollface (Casilla 52): 3d6
+        /// - La Roca (Casilla 35): 2d6
+        /// - La Trollface (Casilla 53): 3d6
         /// </summary>
         public void EnsureDefaultBosses()
         {
@@ -76,22 +76,32 @@ namespace Oca2.Combat
                 {
                     bossType = BossType.LaRoca,
                     displayName = "La Roca",
-                    tileIndex = 31,
+                    tileIndex = 35,
                     combatStrength = new DiceFormula(2, 6, 0), // 2d6 (pág. 18)
                     assetFileName = "La roca.png",
-                    description = "Segundo Boss (Casilla 31). Tiene una fuerza de combate de 2d6 (dos dados de 6 caras).",
+                    description = "Segundo Boss (Casilla 35). Tiene una fuerza de combate de 2d6 (dos dados de 6 caras).",
                     isDefeated = false
                 });
                 bosses.Add(new BossDefinition
                 {
                     bossType = BossType.LaTrollface,
                     displayName = "La Trollface",
-                    tileIndex = 52,
+                    tileIndex = 53,
                     combatStrength = new DiceFormula(3, 6, 0), // 3d6 (pág. 18)
                     assetFileName = "Trollface.png",
-                    description = "Boss Final (Casilla 52). Tiene una fuerza de combate de 3d6 (tres dados de 6 caras).",
+                    description = "Boss Final (Casilla 53). Tiene una fuerza de combate de 3d6 (tres dados de 6 caras).",
                     isDefeated = false
                 });
+            }
+            else
+            {
+                // Sincronizar índices de casilla con las 3 casillas rojas del Tablero Principal (13, 35, 53)
+                foreach (var b in bosses)
+                {
+                    if (b.bossType == BossType.LaFoca) b.tileIndex = 13;
+                    else if (b.bossType == BossType.LaRoca) b.tileIndex = 35;
+                    else if (b.bossType == BossType.LaTrollface) b.tileIndex = 53;
+                }
             }
 
 #if UNITY_EDITOR

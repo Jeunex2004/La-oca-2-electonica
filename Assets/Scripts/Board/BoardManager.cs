@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using Oca2.Cameras;
 
@@ -6,8 +5,8 @@ namespace Oca2.Board
 {
     /// <summary>
     /// Administrador central del mundo y los tableros de La Oca 2.
-    /// Controla la instanciación de los tableros (Principal, Infierno 1, Infierno 2, Payaso)
-    /// y gestiona el acceso a las casillas y sus posiciones espaciales.
+    /// Controla los 4 tableros (Principal, Infierno 1, Infierno 2, Payaso),
+    /// sincroniza la posición y tipo exacto de sus casillas y gestiona la cámara.
     /// </summary>
     public class BoardManager : MonoBehaviour
     {
@@ -42,6 +41,54 @@ namespace Oca2.Board
                 return;
             }
             Instance = this;
+
+            SynchronizeAllBoardLayouts();
+        }
+
+        /// <summary>
+        /// Sincroniza y reconstruye las casillas de los 4 tableros según las texturas oficiales
+        /// usando BoardLayoutBuilder para garantizar precisión absoluta en coordenadas y reglas.
+        /// </summary>
+        [ContextMenu("Sincronizar Casillas de los 4 Tableros")]
+        public void SynchronizeAllBoardLayouts()
+        {
+            if (mainBoardCenter == null)
+            {
+                GameObject obj = GameObject.Find("Board_Principal");
+                if (obj != null) mainBoardCenter = obj.transform;
+            }
+            if (hell1BoardCenter == null)
+            {
+                GameObject obj = GameObject.Find("Board_Infierno_1");
+                if (obj != null) hell1BoardCenter = obj.transform;
+            }
+            if (hell2BoardCenter == null)
+            {
+                GameObject obj = GameObject.Find("Board_Infierno_2");
+                if (obj != null) hell2BoardCenter = obj.transform;
+            }
+            if (clownWheelBoardCenter == null)
+            {
+                GameObject obj = GameObject.Find("Board_Payaso");
+                if (obj != null) clownWheelBoardCenter = obj.transform;
+            }
+
+            if (mainBoardCenter != null)
+            {
+                mainBoardPath = BoardLayoutBuilder.RebuildBoardTiles(mainBoardCenter.gameObject, BoardType.MainBoard);
+            }
+            if (hell1BoardCenter != null)
+            {
+                hell1BoardPath = BoardLayoutBuilder.RebuildBoardTiles(hell1BoardCenter.gameObject, BoardType.Hell1);
+            }
+            if (hell2BoardCenter != null)
+            {
+                hell2BoardPath = BoardLayoutBuilder.RebuildBoardTiles(hell2BoardCenter.gameObject, BoardType.Hell2);
+            }
+            if (clownWheelBoardCenter != null)
+            {
+                clownWheelBoardPath = BoardLayoutBuilder.RebuildBoardTiles(clownWheelBoardCenter.gameObject, BoardType.ClownWheel);
+            }
         }
 
         /// <summary>

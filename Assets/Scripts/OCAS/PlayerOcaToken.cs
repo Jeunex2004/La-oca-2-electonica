@@ -150,6 +150,56 @@ namespace Oca2.Players
             moveCoroutine = StartCoroutine(MoveRoutine(path, targetTileIndex, slotIndex, totalPlayers, onComplete));
         }
 
+        /// <summary>
+        /// Anima el movimiento siguiendo una lista exacta de casillas paso a paso
+        /// (soporta rebote en la casilla 63, filas cíclicas de Infierno 1, curva S de Infierno 2 y rueda circular del Payaso).
+        /// </summary>
+        public void MoveAlongSequence(System.Collections.Generic.List<BoardTile> stepTiles, int slotIndex, int totalPlayers, System.Action onComplete = null)
+        {
+            if (moveCoroutine != null) StopCoroutine(moveCoroutine);
+            moveCoroutine = StartCoroutine(MoveSequenceRoutine(stepTiles, slotIndex, totalPlayers, onComplete));
+        }
+
+        private IEnumerator MoveSequenceRoutine(System.Collections.Generic.List<BoardTile> stepTiles, int slotIndex, int totalPlayers, System.Action onComplete)
+        {
+            if (stepTiles == null || stepTiles.Count == 0)
+            {
+                moveCoroutine = null;
+                onComplete?.Invoke();
+                yield break;
+            }
+
+            for (int i = 0; i < stepTiles.Count; i++)
+            {
+                BoardTile nextTile = stepTiles[i];
+                if (nextTile == null) continue;
+
+                bool isLastStep = (i == stepTiles.Count - 1);
+                Vector3 startPos = transform.position;
+                Vector3 endPos = isLastStep
+                    ? CalculateSlotPosition(nextTile.GetStandPosition(), slotIndex, totalPlayers)
+                    : nextTile.GetStandPosition();
+
+                float duration = 0.22f;
+                float elapsed = 0f;
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.Clamp01(elapsed / duration);
+                    float hop = Mathf.Sin(t * Mathf.PI) * 0.45f;
+                    transform.position = Vector3.Lerp(startPos, endPos, t) + Vector3.up * hop;
+                    yield return null;
+                }
+
+                transform.position = endPos;
+                currentBoard = nextTile.Board;
+                currentTileIndex = nextTile.TileNumber;
+            }
+
+            moveCoroutine = null;
+            onComplete?.Invoke();
+        }
+
         private IEnumerator MoveRoutine(BoardPath path, int targetTileIndex, int slotIndex, int totalPlayers, System.Action onComplete)
         {
             if (path == null)

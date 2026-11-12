@@ -4,7 +4,8 @@ using UnityEngine;
 namespace Oca2.Board
 {
     /// <summary>
-    /// Gestiona la secuencia ordenada de casillas de un tablero.
+    /// Gestiona la secuencia ordenada de casillas de un tablero y calcula las trayectorias
+    /// paso a paso según las reglas específicas de cada dimensión (Principal, Infierno 1, Infierno 2, Payaso).
     /// </summary>
     public class BoardPath : MonoBehaviour
     {
@@ -30,22 +31,121 @@ namespace Oca2.Board
 
         /// <summary>
         /// Calcula la casilla destino según la tirada de dado.
-        /// Regla de La Oca: Si la tirada supera la casilla final (63), el exceso rebota hacia atrás.
         /// </summary>
-        public int CalculateTargetTileIndex(int currentTileIndex, int diceRoll)
+        public int CalculateTargetTileIndex(int currentTileIndex, int diceRoll, bool exactRollForGoal = true)
         {
-            if (tiles.Count == 0) return 0;
-            int maxIndex = tiles.Count - 1; // 63 para el tablero principal
-            int target = currentTileIndex + diceRoll;
-
-            if (target > maxIndex)
+            List<BoardTile> steps = TraceStepSequence(currentTileIndex, diceRoll, exactRollForGoal);
+            if (steps.Count > 0 && steps[steps.Count - 1] != null)
             {
-                int excess = target - maxIndex;
-                target = maxIndex - excess;
-                if (target < 0) target = 0;
+                return steps[steps.Count - 1].TileNumber;
+            }
+            return currentTileIndex;
+        }
+
+        /// <summary>
+        /// Traza la secuencia exacta de casillas que pisa una ficha al avanzar `diceRoll` pasos,
+        /// respetando las reglas de cada tablero:
+        /// - MainBoard: Avance lineal (0..63) con rebote hacia atrás en la casilla 63 si exactRollForGoal es true,
+        ///   y detención obligatoria si stopAtTileIndex >= 0 (ej: Boss en el camino).
+        /// - Hell1: Entrada desde START (0 -> 6) y movimiento cíclico horizontal dentro de cada fila de 10 casillas.
+        /// - Hell2: Camino en curva S (0..16) donde no se requiere número exacto para llegar al EXIT (16).
+        /// - ClownWheel: Rueda circular cerrada de 6 sectores (0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0).
+        /// </summary>
+        public List<BoardTile> TraceStepSequence(int currentTileIndex, int diceRoll, bool exactRollForGoal = true, int stopAtTileIndex = -1)
+        {
+            List<BoardTile> sequence = new List<BoardTile>();
+            if (tiles == null || tiles.Count == 0 || diceRoll <= 0) return sequence;
+
+            BoardTile current = GetTile(currentTileIndex);
+            if (current == null) current = tiles[0];
+
+            if (boardType == BoardType.MainBoard)
+            {
+                int maxIndex = tiles.Count - 1; // 63
+                int curIdx = current.TileNumber;
+                int dir = 1;
+
+                for (int s = 0; s < diceRoll; s++)
+                {
+                    int nextIdx = curIdx + dir;
+                    if (nextIdx > maxIndex)
+                    {
+                        if (exactRollForGoal)
+                        {
+                            dir = -1;
+                            nextIdx = maxIndex - 1;
+                        }
+                        else
+                        {
+                            nextIdx = maxIndex;
+                        }
+                    }
+                    if (nextIdx < 0) nextIdx = 0;
+
+                    curIdx = nextIdx;
+                    BoardTile stepTile = GetTile(curIdx);
+                    if (stepTile != null)
+                    {
+                        sequence.Add(stepTile);
+                    }
+
+                    if (stopAtTileIndex >= 0 && curIdx == stopAtTileIndex)
+                    {
+                        break;
+                    }
+                    if (!exactRollForGoal && curIdx == maxIndex)
+                    {
+                        break;
+                    }
+                }
+            }
+            else if (boardType == BoardType.Hell1 || boardType == BoardType.ClownWheel)
+            {
+                // Seguir los punteros NextTile (que forman bucles por fila en Hell1 o bucle circular de 6 sectores en ClownWheel)
+                for (int s = 0; s < diceRoll; s++)
+                {
+                    if (current.NextTile != null)
+                    {
+                        current = current.NextTile;
+                        sequence.Add(current);
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
+            else if (boardType == BoardType.Hell2)
+            {
+                // En Infierno 2 (pág. 11): al llegar o pasar por Zombi (15) / EXIT (16) sin necesitar número exacto
+                for (int s = 0; s < diceRoll; s++)
+                {
+                    if (current.NextTile != null)
+                    {
+                        current = current.NextTile;
+                        sequence.Add(current);
+                        if (current.Type == TileType.Meta)
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
             }
 
-            return target;
+            return sequence;
+        }
+
+        /// <summary>
+        /// Configura el tipo de tablero y registra la lista de casillas del camino.
+        /// </summary>
+        public void ConfigureBoardTypeAndTiles(BoardType type, List<BoardTile> newTiles)
+        {
+            boardType = type;
+            SetTiles(newTiles);
         }
 
         /// <summary>
@@ -55,7 +155,7 @@ namespace Oca2.Board
         {
             tiles = new List<BoardTile>(newTiles);
 
-            // Enlazar referencias de casillas contiguas
+            // Enlazar referencias de casillas contiguas por defecto
             for (int i = 0; i < tiles.Count; i++)
             {
                 if (tiles[i] == null) continue;
@@ -74,7 +174,8 @@ namespace Oca2.Board
             BoardTile[] foundTiles = GetComponentsInChildren<BoardTile>();
             System.Array.Sort(foundTiles, (a, b) => a.TileNumber.CompareTo(b.TileNumber));
             SetTiles(new List<BoardTile>(foundTiles));
-            Debug.Log($"[BoardPath] Se registraron y ordenaron {tiles.Count} casillas en {gameObject.name}.");
+            BoardLayoutBuilder.ConnectBoardEdges(boardType, tiles);
+            Debug.Log($"[BoardPath] Se registraron y ordenaron {tiles.Count} casillas en {gameObject.name} ({boardType}).");
         }
 
         private void OnDrawGizmos()
@@ -82,12 +183,12 @@ namespace Oca2.Board
             if (tiles == null || tiles.Count < 2) return;
 
             Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.7f);
-            for (int i = 0; i < tiles.Count - 1; i++)
+            for (int i = 0; i < tiles.Count; i++)
             {
-                if (tiles[i] != null && tiles[i + 1] != null)
+                if (tiles[i] != null && tiles[i].NextTile != null)
                 {
                     Vector3 from = tiles[i].GetStandPosition();
-                    Vector3 to = tiles[i + 1].GetStandPosition();
+                    Vector3 to = tiles[i].NextTile.GetStandPosition();
                     Gizmos.DrawLine(from, to);
                 }
             }

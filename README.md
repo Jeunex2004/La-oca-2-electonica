@@ -60,11 +60,11 @@ Implementado siguiendo el diseño de **Interfaz y Experiencia de Usuario (UI/UX)
 Implementado conforme a las reglas de las páginas 6, 8, 17, 18 y 27 del documento **TP2 (AE2)**:
 
 #### Los 3 Bosses del Tablero Principal (`CombatManager.cs`, `BossBoardToken.cs`, `CombatData.cs`)
-- **Instanciación 3D en el Tablero:** Al comenzar la partida, los 3 Bosses aparecen físicamente sobre sus casillas con un pedestal carmesí y su sprite orientado hacia la cámara con `OcaBillboard`:
+- **Instanciación 3D en el Tablero:** Al comenzar la partida, los 3 Bosses aparecen físicamente sobre sus casillas rojas del Tablero Principal con un pedestal carmesí y su sprite orientado hacia la cámara con `OcaBillboard`:
   1. **Casilla 13 — La Foca** (`La foca.png`): Fuerza de combate **`1d8`** (1 dado de 8 caras).
-  2. **Casilla 31 — La Roca** (`La roca.png`): Fuerza de combate **`2d6`** (2 dados de 6 caras).
-  3. **Casilla 52 — La Trollface** (`Trollface.png`): Fuerza de combate **`3d6`** (3 dados de 6 caras).
-- **Intercepción al pasar por encima (`GetBossInterceptOnPath`):** Si un jugador avanza con su tirada y pasa por encima (o cae) en la casilla de un Boss vivo, su movimiento se detiene en la casilla del Boss y se abre el duelo obligatorio. Si el jugador salta por encima usando las casillas *De Oca a Oca* (ej. de la 9 a la 14, de la 27 a la 32, o de la 50 a la 54), logra saltear al Boss como indica la pág. 4 y 27 del GDD.
+  2. **Casilla 35 — La Roca** (`La roca.png`): Fuerza de combate **`2d6`** (2 dados de 6 caras).
+  3. **Casilla 53 — La Trollface** (`Trollface.png`): Fuerza de combate **`3d6`** (3 dados de 6 caras).
+- **Intercepción al pasar por encima (`GetBossInterceptOnPath`):** Si un jugador avanza con su tirada y pasa por encima (o cae) en la casilla de un Boss vivo, su movimiento se detiene en la casilla del Boss y se abre el duelo obligatorio. Si el jugador salta por encima usando las casillas *De Oca a Oca* (ej. de la 9 a la 14, de la 32 a la 36, o de la 50 a la 54), logra saltear al Boss como indica la pág. 4 y 27 del GDD.
 
 #### Combate entre Jugadores (PvP) y Resolución por Dados
 - **Duelos PvP (`GetPvPOpponentOnTile`):** Si un jugador termina su movimiento en una casilla ocupada por otro jugador (excepto en `START` y en el `Infierno 2`, donde no hay combates según la pág. 11), se inicia un combate directo entre ambos.
@@ -74,16 +74,32 @@ Implementado conforme a las reglas de las páginas 6, 8, 17, 18 y 27 del documen
 
 ---
 
-### 3. Mundo 3D, Tableros y Sistema de Cámara (Etapa 1)
+### 3. Mapeo Exacto de Casillas y Coordenadas UV en los 4 Tableros (Etapa 4)
 
-- **4 Tableros 3D (`BoardManager.cs`, `BoardPath.cs`, `BoardTile.cs`, `TileType.cs`):**
-  - **Tablero Principal (`MainBoard`):** Camino en espiral de 64 posiciones (`0 = START` a `63 = Meta`) con casillas tipadas (*Oca*, *Puente*, *Muerte*, *Dinero*, *Experiencia*, *Tienda*, *Hechizos*, *Cartas Salvajes*, *Boss*, *Zombi*).
-  - **Tablero del Infierno 1 (`Hell1`):** Tablero secundario para jugadores que mueren en el tablero principal.
-  - **Tablero del Infierno 2 (`Hell2`):** Tablero en S al que van los jugadores que mueren estando en el Infierno 1 (al salir vuelven como *Zombis* inmortales).
-  - **Tablero del Payaso (`ClownWheel`):** Rueda especial de sectores *NO* y *EXIT*.
+Implementado en [`BoardLayoutBuilder.cs`](Assets/Scripts/Board/BoardLayoutBuilder.cs), [`BoardPath.cs`](Assets/Scripts/Board/BoardPath.cs) y [`BoardManager.cs`](Assets/Scripts/Board/BoardManager.cs) para que todas las casillas coincidan exactamente con las texturas oficiales (`Tablero principal.png`, `Tablero infierno 1.png`, `Tablero infierno 2.png` y `Tablero payaso.png`):
+
+- **Tablero Principal (`MainBoard` — 64 casillas: `0 = START` a `63 = Meta`):**
+  - Coordenadas UV mapeadas sobre la cara superior del tablero (incluyendo las casillas dobles en diagonal de las esquinas `[8,9]`, `[18,19]`, `[28,29]`, `[36,37]`, `[44,45]`, `[50,51]`, `[56,57]` y `[60,61]`).
+  - **Ocas conectadas (`SpecialDestinationTile`):** `1 -> 5 -> 9 -> 14 -> 18 -> 23 -> 27 -> 32 -> 36 -> 41 -> 45 -> 50 -> 54 -> 59 -> 63 (Meta)`.
+  - **Puentes conectados:** `4 <-> 12`.
+  - **Calaveras (Muerte):** Casillas `2`, `58` y `60`.
+  - **Tiendas:** Casillas `11`, `34` y `46`.
+  - **Bosses:** Casillas `13` (*La Foca*), `35` (*La Roca*) y `53` (*La Trollface*).
+- **Tablero del Infierno 1 (`Hell1` — 42 casillas):**
+  - `0 = START` (con entrada a la casilla `6`), **4 filas cíclicas horizontales de 10 casillas cada una** (`1..10` de *Dinero*, `11..20` de *Hechizos* y *Cartas Salvajes*, `21..30` de *Experiencia*, `31..40` de *Dinero* y *Tiendas*) y `41 = EXIT`.
+  - Enlaces de **flechas rojas ascendentes** entre niveles (`4->14`, `7->17`, `10->20`; `14->24`, `16->26`, `18->28`; `22->32`, `25->35`, `27->37`; `35->41`, `36->41`). Al llegar a `EXIT` (`41`), el jugador regresa a `START` (`0`) del Tablero Principal.
+- **Tablero del Infierno 2 (`Hell2` — 17 casillas en curva S):**
+  - `0 = START`, `1..14 = BobEsponja` (*"No pasa nada :)"*), `15 = Zombi` y `16 = EXIT`. Al llegar o pasar por `15`/`16` (sin requerir tirada exacta), el jugador se transforma en **Zombi inmortal** y regresa a `START` (`0`) del Tablero Principal.
+- **Tablero del Payaso (`ClownWheel` — 6 sectores circulares):**
+  - `0 = EXIT` (sector verde inferior) y `1..5 = NO` dispuestos en bucle circular cerrado (`0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 0`). Al caer exactamente en `0` (`EXIT`), el jugador escapa al `START` del Tablero Principal.
+
+---
+
+### 4. Mundo 3D y Sistema de Cámara (Etapa 1)
+
 - **Cámara Isométrica 3D (`BoardCameraController.cs`):**
   - Rotación cardinal de 90° con las teclas `A` y `D`.
-  - Cambio de vista entre los 4 tableros con `Flecha Izquierda` y `Flecha Derecha`.
+  - Cambio de vista entre los 4 tableros con `Flecha Izquierda` y `Flecha Derecha` (y cambio automático al tablero del jugador activo en su turno).
   - Zoom con la rueda del ratón, paneo con clic derecho/central y enfoque general con `Espacio`.
 
 ---
@@ -93,9 +109,10 @@ Implementado conforme a las reglas de las páginas 6, 8, 17, 18 y 27 del documen
 ```text
 Assets/Scripts/
 ├── Board/
-│   ├── BoardManager.cs          # Gestor central de los 4 tableros y cambio de vista
-│   ├── BoardPath.cs             # Secuencia de casillas y cálculo de avance con rebote en la 63
-│   ├── BoardTile.cs             # Casilla individual, conexiones (Oca/Puente) y Gizmos en Editor
+│   ├── BoardLayoutBuilder.cs    # Coordenadas UV exactas, tipos y enlaces de los 4 tableros (64, 42, 17 y 6 casillas)
+│   ├── BoardManager.cs          # Gestor central de los 4 tableros, sincronización automática y cambio de vista
+│   ├── BoardPath.cs             # Trazado paso a paso (rebote en 63, anillos en Hell1, curva S en Hell2 y rueda en Payaso)
+│   ├── BoardTile.cs             # Casilla individual, conexiones (Oca/Puente/Flechas Rojas) y Gizmos en Editor
 │   └── TileType.cs              # Enumeraciones de tipos de casilla (TileType) y tableros (BoardType)
 ├── Camera/
 │   └── BoardCameraController.cs # Cámara isométrica 3D con rotación cardinal, zoom, paneo y órbita en menú

@@ -415,7 +415,8 @@ namespace Oca2.Core
         }
 
         /// <summary>
-        /// Lanza el dado de movimiento (1d6) para el jugador en turno y verifica intercepciones de Bosses y efectos de casilla.
+        /// Lanza el dado de movimiento (1d6) para el jugador en turno y verifica intercepciones de Bosses y efectos de casilla
+        /// en los 4 tableros (Principal, Infierno 1, Infierno 2 y Rueda del Payaso).
         /// </summary>
         public void RollDiceForCurrentPlayer()
         {
@@ -434,33 +435,42 @@ namespace Oca2.Core
             if (path == null) return;
 
             int roll = UnityEngine.Random.Range(1, 7); // 1d6 por defecto (pág. 6)
-            int targetIndex;
 
-            if (options.exactRollForGoal && currentToken.CurrentBoard == BoardType.MainBoard)
-            {
-                targetIndex = path.CalculateTargetTileIndex(currentToken.CurrentTileIndex, roll);
-            }
-            else
-            {
-                targetIndex = Mathf.Min(currentToken.CurrentTileIndex + roll, path.TileCount - 1);
-            }
+            // Trazar secuencia preliminar de casillas según las reglas del tablero actual
+            List<BoardTile> stepSequence = path.TraceStepSequence(
+                currentToken.CurrentTileIndex,
+                roll,
+                options.exactRollForGoal
+            );
 
-            // Regla TP2 (pág. 8-9): Si el jugador pasa por encima de una casilla con un Boss activo, debe detenerse y enfrentarse a él
+            int targetIndex = stepSequence.Count > 0
+                ? stepSequence[stepSequence.Count - 1].TileNumber
+                : currentToken.CurrentTileIndex;
+
+            // Regla TP2 (pág. 8-9): Si en el Tablero Principal pasa por encima de un Boss vivo, debe detenerse y enfrentarse a él
             BossDefinition interceptedBoss = null;
-            if (options.enableBosses && CombatManager.Instance != null)
+            if (options.enableBosses && CombatManager.Instance != null && currentToken.CurrentBoard == BoardType.MainBoard)
             {
+                int rawReach = Mathf.Min(currentToken.CurrentTileIndex + roll, path.TileCount - 1);
                 interceptedBoss = CombatManager.Instance.GetBossInterceptOnPath(
                     currentToken.CurrentBoard,
                     currentToken.CurrentTileIndex,
-                    targetIndex
+                    rawReach
                 );
 
                 if (interceptedBoss != null)
                 {
                     targetIndex = interceptedBoss.tileIndex;
+                    stepSequence = path.TraceStepSequence(
+                        currentToken.CurrentTileIndex,
+                        roll,
+                        options.exactRollForGoal,
+                        targetIndex
+                    );
                 }
             }
 
+            boardMgr.SwitchToBoard(currentToken.CurrentBoard);
             if (boardMgr.CameraController != null)
             {
                 boardMgr.CameraController.FocusOnTarget(currentToken.transform, 14f);
@@ -469,11 +479,11 @@ namespace Oca2.Core
             string playerName = currentToken.PlayerData.playerName;
             string moveMsg = interceptedBoss != null
                 ? $"{playerName} tiró un {roll}, ¡pero el Boss {interceptedBoss.displayName} bloquea el paso en la casilla {targetIndex}!"
-                : $"{playerName} tiró un {roll} y avanza a la casilla {targetIndex}...";
+                : $"{playerName} tiró un {roll} y avanza a la casilla {targetIndex} ({currentToken.CurrentBoard})...";
 
             OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, roll, moveMsg);
 
-            currentToken.MoveAlongPath(path, targetIndex, currentTurnPlayerIndex, activeTokens.Count, () =>
+            currentToken.MoveAlongSequence(stepSequence, currentTurnPlayerIndex, activeTokens.Count, () =>
             {
                 if (interceptedBoss != null && CombatManager.Instance != null)
                 {
@@ -541,9 +551,14 @@ namespace Oca2.Core
                     }
                     break;
 
+                case TileType.BobEsponja:
+                    effectMsg = $"{pData.playerName} cayó en Bob Esponja ({landedTile.TileNumber}): No pasa nada :)";
+                    break;
+
                 case TileType.Zombi:
                     pData.isZombie = true;
-                    effectMsg = $"¡{pData.playerName} se convirtió en ZOMBI! Ahora es inmortal ante las casillas de muerte y derrotas.";
+                    ReturnPlayerToMainBoardStart(token, boardMgr);
+                    effectMsg = $"¡{pData.playerName} llegó a la casilla Zombi, se convirtió en ZOMBI inmortal y regresa al START del Tablero Principal!";
                     break;
 
                 case TileType.Muerte:
@@ -560,9 +575,53 @@ namespace Oca2.Core
                     break;
 
                 case TileType.Meta:
-                    effectMsg = $"¡¡VICTORIA!! ¡{pData.playerName} cayó exactamente en la Casilla 63 y ganó La Oca 2!";
-                    OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, effectMsg);
-                    return;
+                    if (token.CurrentBoard == BoardType.MainBoard)
+                    {
+                        effectMsg = $"¡¡VICTORIA!! ¡{pData.playerName} llegó a la Casilla 63 y ganó La Oca 2: Electric Boogaloo!";
+                        OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, effectMsg);
+                        return;
+                    }
+                    else if (token.CurrentBoard == BoardType.Hell1)
+                    {
+                        ReturnPlayerToMainBoardStart(token, boardMgr);
+                        effectMsg = $"¡{pData.playerName} alcanzó el EXIT de Infierno 1 y regresa al START del Tablero Principal!";
+                    }
+                    else if (token.CurrentBoard == BoardType.Hell2)
+                    {
+                        pData.isZombie = true;
+                        ReturnPlayerToMainBoardStart(token, boardMgr);
+                        effectMsg = $"¡{pData.playerName} alcanzó el EXIT de Infierno 2, se convirtió en ZOMBI y regresa al START del Tablero Principal!";
+                    }
+                    else if (token.CurrentBoard == BoardType.ClownWheel)
+                    {
+                        ReturnPlayerToMainBoardStart(token, boardMgr);
+                        effectMsg = $"¡{pData.playerName} cayó exactamente en EXIT y escapa de la Rueda del Payaso hacia el Tablero Principal!";
+                    }
+                    break;
+
+                case TileType.Normal:
+                    if (token.CurrentBoard == BoardType.ClownWheel)
+                    {
+                        effectMsg = $"¡NO! {pData.playerName} cayó en el sector '{landedTile.TileName}' y sigue en la Dimensión del Payaso.";
+                    }
+                    break;
+            }
+
+            // Regla especial de Infierno 1 ("Tablero infierno 1.png"):
+            // Si el jugador cae en una casilla con flecha roja ascendente (SpecialDestinationTile), sube al siguiente nivel o al EXIT
+            if (token.CurrentBoard == BoardType.Hell1 && landedTile.SpecialDestinationTile != null)
+            {
+                BoardTile dest = landedTile.SpecialDestinationTile;
+                if (dest.Type == TileType.Meta)
+                {
+                    ReturnPlayerToMainBoardStart(token, boardMgr);
+                    effectMsg += $" ¡Subió por la flecha roja hacia el EXIT y regresa al START del Tablero Principal!";
+                }
+                else
+                {
+                    token.PlaceOnTileImmediate(dest, currentTurnPlayerIndex, activeTokens.Count);
+                    effectMsg += $" ¡Flecha roja! Sube al siguiente anillo ({dest.TileName}).";
+                }
             }
 
             // Verificar si después del efecto de casilla hay otro jugador en la misma posición para iniciar un Combate PvP
@@ -587,6 +646,16 @@ namespace Oca2.Core
             else
             {
                 OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, effectMsg);
+            }
+        }
+
+        private void ReturnPlayerToMainBoardStart(PlayerOcaToken token, BoardManager boardMgr)
+        {
+            if (token == null || boardMgr == null) return;
+            BoardTile mainStart = boardMgr.GetTile(BoardType.MainBoard, 0);
+            if (mainStart != null)
+            {
+                token.PlaceOnTileImmediate(mainStart, token.PlayerData.playerIndex, activeTokens.Count);
             }
         }
 
