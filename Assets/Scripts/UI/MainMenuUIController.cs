@@ -6,6 +6,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 #endif
+using Oca2.Board;
 using Oca2.CardsAndMagic;
 using Oca2.Combat;
 using Oca2.Core;
@@ -121,6 +122,26 @@ namespace Oca2.UI
         private Button combatRollBtn;
         private Button combatContinueBtn;
 
+        // Ventana Modal de Decisiones de Casilla (Flecha Roja en Infierno 1 y Reemplazo de Hechizo)
+        private GameObject decisionModalPanel;
+        private Text decisionHeaderTitleText;
+        private Text decisionBodyText;
+        private Button decisionConfirmBtn;
+        private Text decisionConfirmBtnLabel;
+        private Button decisionCancelBtn;
+        private Text decisionCancelBtnLabel;
+        private System.Action<bool> activeDecisionCallback;
+
+        // Ventana Modal de Carta Emergente (Carta Salvaje / Hechizo) y Pantalla de Victoria
+        private GameObject cardPopupPanel;
+        private Image cardPopupFrameOutlineHolder;
+        private Text cardPopupKindText;
+        private Text cardPopupTitleText;
+        private Text cardPopupBodyText;
+        private Button cardPopupOkBtn;
+        private Text cardPopupOkLabel;
+        private bool cardPopupIsVictory = false;
+
         // Colores del tema visual inspirados en el TP2 (pág. 5 y 24)
         private static readonly Color CreamButtonColor = new Color(0.96f, 0.93f, 0.79f, 1f);
         private static readonly Color CreamButtonHighlight = new Color(1f, 0.98f, 0.88f, 1f);
@@ -187,6 +208,11 @@ namespace Oca2.UI
                 GameSessionManager.Instance.OnMatchEndedToMenu += HandleMatchEndedToMenu;
                 GameSessionManager.Instance.OnTurnStateUpdated += HandleTurnStateUpdated;
                 GameSessionManager.Instance.OnShopTriggered += HandleShopTriggered;
+                GameSessionManager.Instance.OnHell1ArrowChoiceRequested += HandleHell1ArrowChoiceRequested;
+                GameSessionManager.Instance.OnSpellReplaceChoiceRequested += HandleSpellReplaceChoiceRequested;
+                GameSessionManager.Instance.OnWildCardDrawn += HandleWildCardDrawn;
+                GameSessionManager.Instance.OnSpellDrawn += HandleSpellDrawn;
+                GameSessionManager.Instance.OnVictory += HandleVictory;
             }
 
             if (CombatManager.Instance != null)
@@ -209,6 +235,11 @@ namespace Oca2.UI
                 GameSessionManager.Instance.OnMatchEndedToMenu -= HandleMatchEndedToMenu;
                 GameSessionManager.Instance.OnTurnStateUpdated -= HandleTurnStateUpdated;
                 GameSessionManager.Instance.OnShopTriggered -= HandleShopTriggered;
+                GameSessionManager.Instance.OnHell1ArrowChoiceRequested -= HandleHell1ArrowChoiceRequested;
+                GameSessionManager.Instance.OnSpellReplaceChoiceRequested -= HandleSpellReplaceChoiceRequested;
+                GameSessionManager.Instance.OnWildCardDrawn -= HandleWildCardDrawn;
+                GameSessionManager.Instance.OnSpellDrawn -= HandleSpellDrawn;
+                GameSessionManager.Instance.OnVictory -= HandleVictory;
             }
 
             if (CombatManager.Instance != null)
@@ -812,6 +843,8 @@ namespace Oca2.UI
             BuildShopModalPanel(inGameHudPanel.transform);
             BuildBagAndMagicModalPanel(inGameHudPanel.transform);
             BuildCombatModalPanel(inGameHudPanel.transform);
+            BuildDecisionModalPanel(inGameHudPanel.transform);
+            BuildCardPopupPanel(inGameHudPanel.transform);
         }
 
         // ---------------------------------------------------------------------
@@ -1217,6 +1250,215 @@ namespace Oca2.UI
             combatModalPanel.SetActive(false);
         }
 
+        // ---------------------------------------------------------------------
+        // 5E. MODAL DE DECISIONES DE CASILLA (Flecha Roja en Infierno 1 y Reemplazo de Hechizo)
+        // ---------------------------------------------------------------------
+        private void BuildDecisionModalPanel(Transform parent)
+        {
+            decisionModalPanel = CreatePanel(parent, "Decision_ModalOverlay", new Color(0.02f, 0.03f, 0.02f, 0.85f));
+
+            GameObject window = CreateBox(decisionModalPanel.transform, "Decision_Window", CardBgColor,
+                new Vector2(0.24f, 0.28f), new Vector2(0.76f, 0.72f));
+            AddOutline(window, new Color(0.95f, 0.78f, 0.22f), 4f);
+
+            decisionHeaderTitleText = CreateText(window.transform, "Decision_Header", "ELECCIÓN DE CASILLA", 28, FontStyle.Bold,
+                CreamButtonColor, TextAnchor.MiddleCenter, new Vector2(0.05f, 0.78f), new Vector2(0.95f, 0.94f));
+            AddShadow(decisionHeaderTitleText.gameObject, Color.black, new Vector2(2f, -2f));
+
+            GameObject bodyBox = CreateBox(window.transform, "Decision_BodyBox", new Color(0.09f, 0.12f, 0.09f, 0.96f),
+                new Vector2(0.06f, 0.28f), new Vector2(0.94f, 0.75f));
+            AddOutline(bodyBox, DarkBorderColor, 2f);
+
+            decisionBodyText = CreateText(bodyBox.transform, "Decision_BodyText", "", 19, FontStyle.Normal,
+                Color.white, TextAnchor.MiddleCenter, new Vector2(0.05f, 0.08f), new Vector2(0.95f, 0.92f));
+
+            decisionConfirmBtn = CreateStyledButton(window.transform, "Btn_DecisionConfirm", "Confirmar",
+                new Vector2(0.08f, 0.06f), new Vector2(0.48f, 0.22f),
+                AccentGreenColor, Color.white, 19, () => ResolveActiveDecision(true));
+            decisionConfirmBtnLabel = decisionConfirmBtn.GetComponentInChildren<Text>();
+
+            decisionCancelBtn = CreateStyledButton(window.transform, "Btn_DecisionCancel", "Mantener Actual",
+                new Vector2(0.52f, 0.06f), new Vector2(0.92f, 0.22f),
+                new Color(0.45f, 0.30f, 0.16f, 1f), Color.white, 19, () => ResolveActiveDecision(false));
+            decisionCancelBtnLabel = decisionCancelBtn.GetComponentInChildren<Text>();
+
+            decisionModalPanel.SetActive(false);
+        }
+
+        // ---------------------------------------------------------------------
+        // 5F. CARTA EMERGENTE (Carta Salvaje / Hechizo) Y PANTALLA DE VICTORIA
+        // ---------------------------------------------------------------------
+        private void BuildCardPopupPanel(Transform parent)
+        {
+            cardPopupPanel = CreatePanel(parent, "CardPopup_ModalOverlay", new Color(0.02f, 0.03f, 0.02f, 0.80f));
+
+            GameObject card = CreateBox(cardPopupPanel.transform, "CardPopup_Card", new Color(0.97f, 0.94f, 0.82f, 1f),
+                new Vector2(0.34f, 0.18f), new Vector2(0.66f, 0.82f));
+            AddOutline(card, DarkBorderColor, 6f);
+
+            cardPopupKindText = CreateText(card.transform, "Card_Kind", "CARTA", 20, FontStyle.Bold,
+                TitleRedColor, TextAnchor.MiddleCenter, new Vector2(0.05f, 0.88f), new Vector2(0.95f, 0.97f));
+
+            cardPopupTitleText = CreateText(card.transform, "Card_Title", "", 30, FontStyle.Bold,
+                DarkBorderColor, TextAnchor.MiddleCenter, new Vector2(0.06f, 0.68f), new Vector2(0.94f, 0.88f));
+
+            cardPopupBodyText = CreateText(card.transform, "Card_Body", "", 19, FontStyle.Normal,
+                DarkBorderColor, TextAnchor.MiddleCenter, new Vector2(0.08f, 0.24f), new Vector2(0.92f, 0.68f));
+
+            cardPopupOkBtn = CreateStyledButton(card.transform, "Btn_CardOk", "Aceptar",
+                new Vector2(0.25f, 0.05f), new Vector2(0.75f, 0.18f),
+                AccentGreenColor, Color.white, 22, OnCardPopupOkClicked);
+            cardPopupOkLabel = cardPopupOkBtn.GetComponentInChildren<Text>();
+
+            cardPopupPanel.SetActive(false);
+        }
+
+        private void ShowCardPopup(string kind, string title, string body, Color titleColor, bool isVictory)
+        {
+            if (cardPopupPanel == null) return;
+            cardPopupIsVictory = isVictory;
+            cardPopupKindText.text = kind;
+            cardPopupTitleText.text = title;
+            cardPopupTitleText.color = titleColor;
+            cardPopupBodyText.text = body;
+            cardPopupOkLabel.text = isVictory ? "Volver al Menú Principal" : "Aceptar";
+            cardPopupPanel.transform.SetAsLastSibling();
+            cardPopupPanel.SetActive(true);
+        }
+
+        private void OnCardPopupOkClicked()
+        {
+            if (cardPopupPanel != null) cardPopupPanel.SetActive(false);
+            if (cardPopupIsVictory)
+            {
+                cardPopupIsVictory = false;
+                if (GameSessionManager.Instance != null) GameSessionManager.Instance.ReturnToMainMenu();
+                else ShowMainMenu();
+            }
+        }
+
+        private void HandleWildCardDrawn(PlayerOcaToken token, WildCardDefinition card, string resultText)
+        {
+            if (card == null) return;
+            Color c = card.isNegative ? new Color(0.70f, 0.08f, 0.08f) : new Color(0.10f, 0.45f, 0.18f);
+            ShowCardPopup("CARTA SALVAJE", card.title, $"{card.description}\n\n{resultText}", c, false);
+        }
+
+        private void HandleSpellDrawn(PlayerOcaToken token, SpellType spell)
+        {
+            SpellDefinition def = SpellsAndWildCardsSystem.GetSpellDefinition(spell);
+            if (def == null) return;
+            string kind = def.isCombatSpell ? "HECHIZO DE COMBATE" : "HECHIZO DE TURNO";
+            ShowCardPopup(kind, def.displayName,
+                $"{def.description}\n\nCoste: {def.manaCost} Maná",
+                new Color(0.40f, 0.15f, 0.65f), false);
+        }
+
+        private void HandleVictory(PlayerOcaToken winner, string message)
+        {
+            if (winner == null) return;
+            if (combatModalPanel != null) combatModalPanel.SetActive(false);
+            if (decisionModalPanel != null) decisionModalPanel.SetActive(false);
+            if (rollDiceButton != null) rollDiceButton.interactable = false;
+            ShowCardPopup("¡FIN DE LA PARTIDA!", $"¡{winner.PlayerData.playerName} GANA!",
+                $"{message}\n\nNivel {winner.PlayerData.expLevel}  •  Monedas: {winner.PlayerData.coins}",
+                new Color(0.80f, 0.55f, 0.05f), true);
+        }
+
+        private void HandleHell1ArrowChoiceRequested(PlayerOcaToken token, BoardTile destTile, System.Action<bool> onChoiceMade)
+        {
+            if (decisionModalPanel == null || token == null || destTile == null)
+            {
+                onChoiceMade?.Invoke(true);
+                return;
+            }
+
+            activeDecisionCallback = onChoiceMade;
+            bool isExit = destTile.Type == TileType.Meta;
+
+            if (decisionHeaderTitleText != null)
+            {
+                decisionHeaderTitleText.text = "¡FLECHA ROJA DEL INFIERNO 1!";
+            }
+
+            if (decisionBodyText != null)
+            {
+                decisionBodyText.text = isExit
+                    ? $"¡{token.PlayerData.playerName} cayó exactamente en una Flecha Roja hacia el EXIT!\n\n" +
+                      "¿Quieres salir del Infierno 1 de inmediato hacia el START del Tablero Principal, o prefieres seguir dando vueltas en este anillo para recolectar más recursos?"
+                    : $"¡{token.PlayerData.playerName} cayó exactamente en una Flecha Roja ascendente!\n\n" +
+                      $"¿Quieres subir al siguiente círculo ({destTile.TileName}) o prefieres quedarte girando en tu anillo actual (Monedas, EXP o Tienda del Infierno)?";
+            }
+
+            if (decisionConfirmBtnLabel != null)
+            {
+                decisionConfirmBtnLabel.text = isExit ? "¡Salir al Tablero Principal!" : "Subir al Siguiente Anillo";
+            }
+
+            if (decisionCancelBtnLabel != null)
+            {
+                decisionCancelBtnLabel.text = "Seguir en este Anillo";
+            }
+
+            decisionModalPanel.SetActive(true);
+        }
+
+        private void HandleSpellReplaceChoiceRequested(PlayerOcaToken token, SpellType currentSpell, SpellType drawnSpell, System.Action<bool> onChoiceMade)
+        {
+            if (decisionModalPanel == null || token == null)
+            {
+                onChoiceMade?.Invoke(true);
+                return;
+            }
+
+            activeDecisionCallback = onChoiceMade;
+            SpellDefinition curDef = SpellsAndWildCardsSystem.GetSpellDefinition(currentSpell);
+            SpellDefinition newDef = SpellsAndWildCardsSystem.GetSpellDefinition(drawnSpell);
+
+            string curName = curDef != null ? $"{curDef.displayName} ({curDef.manaCost} Maná)" : currentSpell.ToString();
+            string curDesc = curDef != null ? curDef.description : "";
+            string newName = newDef != null ? $"{newDef.displayName} ({newDef.manaCost} Maná)" : drawnSpell.ToString();
+            string newDesc = newDef != null ? newDef.description : "";
+
+            if (decisionHeaderTitleText != null)
+            {
+                decisionHeaderTitleText.text = "CASILLA DE HECHIZOS — ¿CAMBIAR HECHIZO?";
+            }
+
+            if (decisionBodyText != null)
+            {
+                decisionBodyText.text =
+                    $"{token.PlayerData.playerName}, solo puedes llevar 1 hechizo equipado a la vez:\n\n" +
+                    $"• Hechizo Actual: {curName}\n  ({curDesc})\n\n" +
+                    $"• Nuevo Hechizo Obtenido: {newName}\n  ({newDesc})";
+            }
+
+            if (decisionConfirmBtnLabel != null)
+            {
+                decisionConfirmBtnLabel.text = $"Equipar '{newDef?.displayName ?? drawnSpell.ToString()}'";
+            }
+
+            if (decisionCancelBtnLabel != null)
+            {
+                decisionCancelBtnLabel.text = $"Conservar '{curDef?.displayName ?? currentSpell.ToString()}'";
+            }
+
+            decisionModalPanel.SetActive(true);
+        }
+
+        private void ResolveActiveDecision(bool acceptedPrimaryChoice)
+        {
+            if (decisionModalPanel != null)
+            {
+                decisionModalPanel.SetActive(false);
+            }
+
+            var cb = activeDecisionCallback;
+            activeDecisionCallback = null;
+            cb?.Invoke(acceptedPrimaryChoice);
+            RefreshInGameHudPlayers();
+        }
+
         // =====================================================================
         // NAVEGACIÓN Y ACTUALIZACIÓN DE ESTADO DE PANELES
         // =====================================================================
@@ -1433,6 +1675,9 @@ namespace Oca2.UI
             if (skillTreeModalPanel != null) skillTreeModalPanel.SetActive(false);
             if (shopModalPanel != null) shopModalPanel.SetActive(false);
             if (bagAndMagicModalPanel != null) bagAndMagicModalPanel.SetActive(false);
+            if (decisionModalPanel != null) decisionModalPanel.SetActive(false);
+            if (cardPopupPanel != null) cardPopupPanel.SetActive(false);
+            activeDecisionCallback = null;
             ShowMainMenu();
         }
 

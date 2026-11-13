@@ -388,13 +388,15 @@ namespace Oca2.Board
                             : tiles[tiles.Count - 1]; // La última Oca (59) salta a la Meta (63)
                     }
 
-                    // Conectar Puentes (4 <-> 12)
-                    BoardTile puente1 = tiles.Find(t => t.TileNumber == 4);
-                    BoardTile puente2 = tiles.Find(t => t.TileNumber == 12);
-                    if (puente1 != null && puente2 != null)
+                    // Conectar Puentes: cada casilla de Puente (4 y 12) avanza +1 a la casilla inmediatamente siguiente (4 -> 5, 12 -> 13)
+                    List<BoardTile> puentes = tiles.FindAll(t => t.Type == TileType.Puente);
+                    foreach (BoardTile puente in puentes)
                     {
-                        puente1.SpecialDestinationTile = puente2;
-                        puente2.SpecialDestinationTile = puente1;
+                        int nextIdx = puente.TileNumber + 1;
+                        if (nextIdx >= 0 && nextIdx < tiles.Count)
+                        {
+                            puente.SpecialDestinationTile = tiles[nextIdx];
+                        }
                     }
                     break;
                 }

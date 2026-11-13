@@ -74,6 +74,32 @@ namespace Oca2.Players
 
             lastVisualizedLevel = setupData != null ? setupData.expLevel : 1;
             UpdateGrowthVisuals(false);
+            UpdateZombieVisuals();
+        }
+
+        /// <summary>
+        /// Actualiza el aspecto visual 3D de la ficha cuando el jugador se convierte en Zombi inmortal (TP2 pág. 10-11),
+        /// aplicando un tinte verde necrótico al sprite de la Oca y a la base interior de la ficha.
+        /// </summary>
+        public void UpdateZombieVisuals()
+        {
+            if (playerData == null) return;
+
+            bool isZomb = playerData.isZombie;
+            if (ocaSpriteRenderer != null)
+            {
+                ocaSpriteRenderer.color = isZomb
+                    ? new Color(0.68f, 1.00f, 0.68f, 1f)
+                    : Color.white;
+            }
+
+            if (innerBaseRenderer != null)
+            {
+                Color innerColor = isZomb
+                    ? new Color(0.22f, 0.92f, 0.28f, 1f)
+                    : Color.Lerp(playerData.tokenColor, Color.white, 0.45f);
+                innerBaseRenderer.material = CreateColoredMaterial(innerColor);
+            }
         }
 
         /// <summary>
@@ -83,6 +109,8 @@ namespace Oca2.Players
         public void UpdateGrowthVisuals(bool allowAnimation = true)
         {
             if (playerData == null) return;
+
+            UpdateZombieVisuals();
 
             float targetScale = SkillTreeAndAbilities.GetGrowthScaleMultiplier(playerData);
             bool leveledUp = playerData.expLevel > lastVisualizedLevel;

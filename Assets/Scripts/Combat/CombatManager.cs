@@ -223,6 +223,24 @@ namespace Oca2.Combat
         }
 
         /// <summary>
+        /// Devuelve el Boss vivo ubicado exactamente en la casilla <paramref name="tileIndex"/> del tablero indicado (o null si no hay ninguno).
+        /// </summary>
+        public BossDefinition GetAliveBossOnTile(BoardType board, int tileIndex)
+        {
+            if (board != BoardType.MainBoard) return null;
+            EnsureDefaultBosses();
+
+            foreach (var boss in bosses)
+            {
+                if (!boss.isDefeated && boss.tileIndex == tileIndex)
+                {
+                    return boss;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
         /// Verifica si hay otro jugador en la misma casilla para iniciar un combate PvP.
         /// Según TP2 pág. 11: en el Tablero del Infierno 2 no puede haber combates.
         /// </summary>

@@ -81,6 +81,10 @@ namespace Oca2.Core
         public event Action<int, int, string> OnTurnStateUpdated; // (playerIdx, lastRoll, statusMessage)
         public event Action<PlayerOcaToken, bool, bool> OnShopTriggered; // (buyerToken, isHellShop, landedExactly)
         public event Action<PlayerOcaToken, WildCardDefinition, string> OnWildCardDrawn; // (token, card, resultText)
+        public event Action<PlayerOcaToken, SpellType> OnSpellDrawn; // (token, spell) al obtener un hechizo sin necesidad de elegir
+        public event Action<PlayerOcaToken, string> OnVictory; // (winnerToken, message)
+        public event Action<PlayerOcaToken, BoardTile, Action<bool>> OnHell1ArrowChoiceRequested; // (token, arrowDestTile, onChoiceMade)
+        public event Action<PlayerOcaToken, SpellType, SpellType, Action<bool>> OnSpellReplaceChoiceRequested; // (token, currentSpell, drawnSpell, onChoiceMade)
 
         public static readonly Color[] DefaultPlayerColors = new Color[]
         {
@@ -585,7 +589,7 @@ namespace Oca2.Core
                 OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, 0, message);
                 if (instantVictory)
                 {
-                    isMatchActive = false;
+                    DeclareVictory(casterToken, 0, message);
                 }
             }
             return ok;
@@ -803,6 +807,14 @@ namespace Oca2.Core
                     if (isFinalStep) landedExactlyOnShop = true;
                 }
 
+                // Regla TP2 (pág. 10 y 11): Al pasar por encima o caer en la casilla Zombi (15 en Infierno 2), el jugador se convierte en Zombi inmortal
+                if (stepTile.Type == TileType.Zombi && !pData.isZombie)
+                {
+                    pData.isZombie = true;
+                    mover.UpdateZombieVisuals();
+                    notes.Add("¡Pasó por la casilla Zombi y se convirtió en ZOMBI inmortal!");
+                }
+
                 foreach (var other in activeTokens)
                 {
                     if (other == null || other == mover) continue;
@@ -879,9 +891,45 @@ namespace Oca2.Core
 
                 case TileType.Hechizos:
                     SpellType drawnSpell = SpellsAndWildCardsSystem.DrawRandomSpell();
-                    pData.currentSpell = drawnSpell;
                     SpellDefinition sDef = SpellsAndWildCardsSystem.GetSpellDefinition(drawnSpell);
-                    effectMsg = $"¡{pData.playerName} cayó en Casilla de Hechizos ({landedTile.TileNumber}) y obtuvo el hechizo '{sDef?.displayName ?? drawnSpell.ToString()}' (Coste: {sDef?.manaCost ?? 0} Maná)!";
+                    string newSpellName = sDef?.displayName ?? drawnSpell.ToString();
+                    int newSpellCost = sDef?.manaCost ?? 0;
+
+                    if (pData.currentSpell != SpellType.None &&
+                        pData.currentSpell != drawnSpell &&
+                        OnSpellReplaceChoiceRequested != null)
+                    {
+                        SpellType previousSpell = pData.currentSpell;
+                        SpellDefinition prevDef = SpellsAndWildCardsSystem.GetSpellDefinition(previousSpell);
+                        string prevSpellName = prevDef?.displayName ?? previousSpell.ToString();
+
+                        OnTurnStateUpdated?.Invoke(
+                            currentTurnPlayerIndex,
+                            lastRoll,
+                            $"¡{pData.playerName} cayó en Casilla de Hechizos ({landedTile.TileNumber})! Elige si conservar '{prevSpellName}' o cambiarlo por '{newSpellName}'."
+                        );
+
+                        OnSpellReplaceChoiceRequested.Invoke(token, previousSpell, drawnSpell, (replaceWithNew) =>
+                        {
+                            if (replaceWithNew)
+                            {
+                                pData.currentSpell = drawnSpell;
+                                effectMsg = $"¡{pData.playerName} reemplazó '{prevSpellName}' por el nuevo hechizo '{newSpellName}' (Coste: {newSpellCost} Maná)!";
+                            }
+                            else
+                            {
+                                effectMsg = $"{pData.playerName} decidió conservar su hechizo actual '{prevSpellName}'.";
+                            }
+                            ContinuePostTileResolution(token, landedTile, boardMgr, lastRoll, extraTurn, playerDiedOnTile, effectMsg);
+                        });
+                        return;
+                    }
+                    else
+                    {
+                        pData.currentSpell = drawnSpell;
+                        effectMsg = $"¡{pData.playerName} cayó en Casilla de Hechizos ({landedTile.TileNumber}) y obtuvo el hechizo '{newSpellName}' (Coste: {newSpellCost} Maná)!";
+                        OnSpellDrawn?.Invoke(token, drawnSpell);
+                    }
                     break;
 
                 case TileType.CartasSalvajes:
@@ -905,7 +953,7 @@ namespace Oca2.Core
                         if (nextOca.Type == TileType.Meta)
                         {
                             effectMsg = $"¡De oca a oca (59 -> 63)! ¡{pData.playerName} llegó a la Casilla 63 y GANA LA PARTIDA!";
-                            OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, effectMsg);
+                            DeclareVictory(token, lastRoll, effectMsg);
                             return;
                         }
                         extraTurn = true;
@@ -914,14 +962,44 @@ namespace Oca2.Core
                     break;
 
                 case TileType.Puente:
-                    if (landedTile.SpecialDestinationTile != null)
+                {
+                    // Regla de Puente corregida: avanza +1 casilla hacia adelante (a la casilla inmediatamente siguiente: 4 -> 5, 12 -> 13)
+                    BoardTile nextAfterBridge = landedTile.NextTile != null
+                        ? landedTile.NextTile
+                        : boardMgr.GetTile(token.CurrentBoard, landedTile.TileNumber + 1);
+
+                    if (nextAfterBridge != null)
                     {
-                        BoardTile otherBridge = landedTile.SpecialDestinationTile;
-                        token.PlaceOnTileImmediate(otherBridge, currentTurnPlayerIndex, activeTokens.Count);
-                        extraTurn = true;
-                        effectMsg = $"¡De puente a puente! {pData.playerName} cruza a la casilla {otherBridge.TileNumber} y vuelve a tirar.";
+                        List<BoardTile> bridgeStep = new List<BoardTile> { nextAfterBridge };
+                        OnTurnStateUpdated?.Invoke(
+                            currentTurnPlayerIndex,
+                            lastRoll,
+                            $"¡Casilla de Puente ({landedTile.TileNumber})! {pData.playerName} avanza +1 casilla hacia la casilla {nextAfterBridge.TileNumber}..."
+                        );
+
+                        token.MoveAlongSequence(bridgeStep, currentTurnPlayerIndex, activeTokens.Count, () =>
+                        {
+                            // Si al avanzar +1 desde el Puente (ej: 12 -> 13) hay un Boss vivo en esa casilla, iniciar Combate de Boss
+                            if (options.enableBosses && CombatManager.Instance != null && token.CurrentBoard == BoardType.MainBoard)
+                            {
+                                BossDefinition bossOnDest = CombatManager.Instance.GetAliveBossOnTile(token.CurrentBoard, nextAfterBridge.TileNumber);
+                                if (bossOnDest != null)
+                                {
+                                    CombatManager.Instance.StartBossCombat(token, bossOnDest, (encounter) =>
+                                    {
+                                        HandleCombatConcluded(encounter, boardMgr, lastRoll, encounter.attackerWon);
+                                    });
+                                    return;
+                                }
+                            }
+
+                            // Resolver el efecto de la casilla siguiente a la que se avanzó (ej: 4 -> 5 activa la Oca 5; 12 -> 13 si La Foca ya murió)
+                            ResolveTileEffect(token, boardMgr, lastRoll);
+                        });
+                        return;
                     }
                     break;
+                }
 
                 case TileType.BobEsponja:
                     effectMsg = $"{pData.playerName} cayó en Bob Esponja ({landedTile.TileNumber}): No pasa nada :)";
@@ -929,6 +1007,7 @@ namespace Oca2.Core
 
                 case TileType.Zombi:
                     pData.isZombie = true;
+                    token.UpdateZombieVisuals();
                     ReturnPlayerToMainBoardStart(token, boardMgr);
                     effectMsg = $"¡{pData.playerName} llegó a la casilla Zombi, se convirtió en ZOMBI inmortal y regresa al START del Tablero Principal!";
                     break;
@@ -956,7 +1035,7 @@ namespace Oca2.Core
                     if (token.CurrentBoard == BoardType.MainBoard)
                     {
                         effectMsg = $"¡¡VICTORIA!! ¡{pData.playerName} llegó a la Casilla 63 y ganó La Oca 2: Electric Boogaloo!";
-                        OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, effectMsg);
+                        DeclareVictory(token, lastRoll, effectMsg);
                         return;
                     }
                     else if (token.CurrentBoard == BoardType.Hell1)
@@ -967,8 +1046,9 @@ namespace Oca2.Core
                     else if (token.CurrentBoard == BoardType.Hell2)
                     {
                         pData.isZombie = true;
+                        token.UpdateZombieVisuals();
                         ReturnPlayerToMainBoardStart(token, boardMgr);
-                        effectMsg = $"¡{pData.playerName} alcanzó el EXIT de Infierno 2, se convirtió en ZOMBI y regresa al START del Tablero Principal!";
+                        effectMsg = $"¡{pData.playerName} alcanzó el EXIT de Infierno 2, se convirtió en ZOMBI inmortal y regresa al START del Tablero Principal!";
                     }
                     else if (token.CurrentBoard == BoardType.ClownWheel)
                     {
@@ -985,23 +1065,103 @@ namespace Oca2.Core
                     break;
             }
 
-            // Regla especial de Infierno 1 ("Tablero infierno 1.png"):
-            // Si el jugador cae en una casilla con flecha roja ascendente (SpecialDestinationTile), sube al siguiente anillo o al EXIT
-            if (token.CurrentBoard == BoardType.Hell1 && landedTile.SpecialDestinationTile != null)
+            ContinuePostTileResolution(token, landedTile, boardMgr, lastRoll, extraTurn, playerDiedOnTile, effectMsg);
+        }
+
+        /// <summary>
+        /// Declara al ganador de la partida: detiene el juego, oculta el vaso/dados y notifica a la UI para mostrar la pantalla de victoria.
+        /// </summary>
+        private void DeclareVictory(PlayerOcaToken winner, int lastRoll, string message)
+        {
+            isMatchActive = false;
+            if (PhysicsDiceAndCupRoller.Instance != null)
+            {
+                PhysicsDiceAndCupRoller.Instance.HideCupAndDice();
+            }
+            OnTurnStateUpdated?.Invoke(currentTurnPlayerIndex, lastRoll, message);
+            OnVictory?.Invoke(winner, message);
+        }
+
+        private void ContinuePostTileResolution(
+            PlayerOcaToken token,
+            BoardTile landedTile,
+            BoardManager boardMgr,
+            int lastRoll,
+            bool extraTurn,
+            bool playerDiedOnTile,
+            string effectMsg)
+        {
+            if (token == null) return;
+            PlayerSetupData pData = token.PlayerData;
+
+            // Regla especial de Infierno 1 (TP2 pág. 11 - "Tablero infierno 1.png"):
+            // Si el jugador cae exactamente en una casilla con flecha roja ascendente (SpecialDestinationTile),
+            // puede elegir si subir al siguiente anillo / EXIT o quedarse en su anillo actual para seguir farmeando.
+            if (!playerDiedOnTile && token.CurrentBoard == BoardType.Hell1 && landedTile != null && landedTile.SpecialDestinationTile != null)
             {
                 BoardTile dest = landedTile.SpecialDestinationTile;
-                if (dest.Type == TileType.Meta)
+                if (OnHell1ArrowChoiceRequested != null)
                 {
-                    ReturnPlayerToMainBoardStart(token, boardMgr);
-                    effectMsg += $" ¡Subió por la flecha roja hacia el EXIT y regresa al START del Tablero Principal!";
+                    string targetDesc = dest.Type == TileType.Meta
+                        ? "el EXIT (regresar al Tablero Principal)"
+                        : $"el siguiente círculo ({dest.TileName})";
+
+                    OnTurnStateUpdated?.Invoke(
+                        currentTurnPlayerIndex,
+                        lastRoll,
+                        $"{effectMsg} ¡Flecha Roja en casilla {landedTile.TileNumber}! Elige si subir hacia {targetDesc} o seguir en este anillo."
+                    );
+
+                    OnHell1ArrowChoiceRequested.Invoke(token, dest, (chooseClimb) =>
+                    {
+                        if (chooseClimb)
+                        {
+                            if (dest.Type == TileType.Meta)
+                            {
+                                ReturnPlayerToMainBoardStart(token, boardMgr);
+                                effectMsg += $" ¡Subió por la flecha roja hacia el EXIT y regresa al START del Tablero Principal!";
+                            }
+                            else
+                            {
+                                token.PlaceOnTileImmediate(dest, currentTurnPlayerIndex, activeTokens.Count);
+                                effectMsg += $" ¡Decidió subir por la flecha roja al siguiente anillo ({dest.TileName})!";
+                            }
+                        }
+                        else
+                        {
+                            effectMsg += " Decidió quedarse girando en este anillo del Infierno 1.";
+                        }
+
+                        FinalizeTurnOrPvPAfterResolution(token, boardMgr, lastRoll, extraTurn, playerDiedOnTile, effectMsg);
+                    });
+                    return;
                 }
                 else
                 {
-                    token.PlaceOnTileImmediate(dest, currentTurnPlayerIndex, activeTokens.Count);
-                    effectMsg += $" ¡Flecha roja! Sube al siguiente anillo ({dest.TileName}).";
+                    if (dest.Type == TileType.Meta)
+                    {
+                        ReturnPlayerToMainBoardStart(token, boardMgr);
+                        effectMsg += $" ¡Subió por la flecha roja hacia el EXIT y regresa al START del Tablero Principal!";
+                    }
+                    else
+                    {
+                        token.PlaceOnTileImmediate(dest, currentTurnPlayerIndex, activeTokens.Count);
+                        effectMsg += $" ¡Flecha roja! Sube al siguiente anillo ({dest.TileName}).";
+                    }
                 }
             }
 
+            FinalizeTurnOrPvPAfterResolution(token, boardMgr, lastRoll, extraTurn, playerDiedOnTile, effectMsg);
+        }
+
+        private void FinalizeTurnOrPvPAfterResolution(
+            PlayerOcaToken token,
+            BoardManager boardMgr,
+            int lastRoll,
+            bool extraTurn,
+            bool playerDiedOnTile,
+            string effectMsg)
+        {
             // Verificar si después del efecto de casilla hay otro jugador en la misma posición para iniciar un Combate PvP
             if (!playerDiedOnTile && CombatManager.Instance != null)
             {
@@ -1239,8 +1399,11 @@ namespace Oca2.Core
         private void SendPlayerToClownWheel(PlayerOcaToken victim, BoardManager boardMgr)
         {
             if (victim == null || boardMgr == null) return;
-            BoardTile clownStart = boardMgr.GetTile(BoardType.ClownWheel, 1); // Sector NO
-            if (clownStart == null) clownStart = boardMgr.GetTile(BoardType.ClownWheel, 0);
+
+            // Regla TP2 (pág. 13): Al ser enviado al Tablero del Payaso, empieza en la casilla de EXIT (índice 0).
+            // En su turno tirará su dado de movimiento y, a partir de su primera tirada, la próxima vez que caiga exactamente en EXIT saldrá.
+            BoardTile clownStart = boardMgr.GetTile(BoardType.ClownWheel, 0);
+            if (clownStart == null) clownStart = boardMgr.GetTile(BoardType.ClownWheel, 1);
             if (clownStart != null)
             {
                 victim.PlaceOnTileImmediate(clownStart, victim.PlayerData.playerIndex, activeTokens.Count);
